@@ -10,19 +10,19 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 # Imports dos componentes
-from src.streamlit.components.sidebar import render_sidebar
-from src.streamlit.components.maps import render_map
-from src.streamlit.components.charts import top_municipios_bar
-from src.streamlit.components.tables import render_table
-from src.streamlit.components.executive_dashboard import render_executive_dashboard
-from src.streamlit.utils.database import (
+from components.sidebar import render_sidebar
+from components.maps import render_map
+from components.charts import top_municipios_bar
+from components.tables import render_table
+from components.executive_dashboard import render_executive_dashboard
+from utils.database import (
     query_df, MunicipalQueries, get_cache_stats, 
     clear_cache, initialize_database
 )
-from src.streamlit.utils.calculations import (
+from utils.calculations import (
     recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
 )
-from src.streamlit.utils.styling import inject_global_css
+from utils.styling import inject_global_css
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -334,7 +334,7 @@ class CP2BDashboard:
                 st.error("❌ Falha na inicialização do banco de dados")
                 
                 # Diagnóstico melhorado
-                from src.streamlit.utils.database import DB_PATH
+                from utils.database import DB_PATH
                 if not DB_PATH.exists():
                     st.error(f"Arquivo não encontrado: {DB_PATH}")
                     st.info("Execute: `python -m src.database.data_loader`")
