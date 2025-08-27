@@ -25,6 +25,8 @@ class DatabaseError(Exception):
 # Thread-local storage para conexões SQLite
 _thread_local = threading.local()
 
+
+
 def get_thread_connection() -> sqlite3.Connection:
     """Obtém conexão SQLite específica da thread atual"""
     if not hasattr(_thread_local, 'connection') or _thread_local.connection is None:

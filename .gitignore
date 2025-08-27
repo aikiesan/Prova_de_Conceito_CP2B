@@ -128,10 +128,10 @@ dmypy.json
 # Streamlit
 .streamlit/secrets.toml
 
-# Database files
-*.db
-*.db-shm
-*.db-wal
+# Database files (comentado - usando banco real)
+# *.db
+# *.db-shm
+# *.db-wal
 
 # Shapefiles (opcional - remover se quiser versionar)
 # shapefile/
