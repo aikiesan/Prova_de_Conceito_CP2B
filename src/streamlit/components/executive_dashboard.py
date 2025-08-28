@@ -20,13 +20,13 @@ def render_executive_summary_cards(df: pd.DataFrame) -> None:
     
     # Calcular métricas principais
     total_municipalities = len(df)
-    municipalities_with_potential = len(df[df['total_final'] > 0])
-    total_potential = df['total_final'].sum()
-    avg_potential = df[df['total_final'] > 0]['total_final'].mean() if municipalities_with_potential > 0 else 0
+    municipalities_with_potential = len(df[df['total_final_nm_ano'] > 0])
+    total_potential = df['total_final_nm_ano'].sum()
+    avg_potential = df[df['total_final_nm_ano'] > 0]['total_final_nm_ano'].mean() if municipalities_with_potential > 0 else 0
     
     # Potencial por categoria
-    agricultural_potential = df['total_agricola'].sum() if 'total_agricola' in df.columns else 0
-    livestock_potential = df['total_pecuaria'].sum() if 'total_pecuaria' in df.columns else 0
+    agricultural_potential = df['total_agricola_nm_ano'].sum() if 'total_agricola_nm_ano' in df.columns else 0
+    livestock_potential = df['total_pecuaria_nm_ano'].sum() if 'total_pecuaria_nm_ano' in df.columns else 0
     
     # Cards principais
     col1, col2, col3, col4 = st.columns(4)
@@ -51,7 +51,7 @@ def render_executive_summary_cards(df: pd.DataFrame) -> None:
         st.metric(
             "📊 Média Municipal",
             f"{avg_potential:,.0f} Nm³/ano",
-            delta=f"Top: {df['total_final'].max():,.0f}",
+            delta=f"Top: {df['total_final_nm_ano'].max():,.0f}",
             help="Média do potencial entre municípios com potencial > 0"
         )
     
@@ -71,14 +71,14 @@ def render_executive_summary_cards(df: pd.DataFrame) -> None:
 def render_potential_distribution_chart(df: pd.DataFrame) -> None:
     """Gráfico de distribuição do potencial por faixas"""
     
-    if df.empty or df['total_final'].sum() == 0:
+    if df.empty or df['total_final_nm_ano'].sum() == 0:
         st.info("Nenhum dado de potencial para visualizar")
         return
     
     st.subheader("📊 Distribuição do Potencial por Faixas")
     
     # Definir faixas de potencial
-    df_with_potential = df[df['total_final'] > 0].copy()
+    df_with_potential = df[df['total_final_nm_ano'] > 0].copy()
     
     if len(df_with_potential) == 0:
         st.info("Nenhum município com potencial > 0")
@@ -89,7 +89,7 @@ def render_potential_distribution_chart(df: pd.DataFrame) -> None:
     labels = ['0-1k', '1k-5k', '5k-10k', '10k-25k', '25k-50k', '50k-100k', '100k+']
     
     df_with_potential['faixa_potencial'] = pd.cut(
-        df_with_potential['total_final'], 
+        df_with_potential['total_final_nm_ano'], 
         bins=bins, 
         labels=labels, 
         include_lowest=True
@@ -99,7 +99,7 @@ def render_potential_distribution_chart(df: pd.DataFrame) -> None:
     faixa_counts = df_with_potential['faixa_potencial'].value_counts().sort_index()
     
     # Calcular potencial total por faixa
-    faixa_potential = df_with_potential.groupby('faixa_potencial')['total_final'].sum().sort_index()
+    faixa_potential = df_with_potential.groupby('faixa_potencial')['total_final_nm_ano'].sum().sort_index()
     
     # Criar gráfico combinado
     fig = make_subplots(
@@ -212,7 +212,7 @@ def render_regional_analysis(df: pd.DataFrame) -> None:
         return
     
     # Top 20 municípios
-    top_municipalities = df.nlargest(20, 'total_final')[['nm_mun', 'total_final', 'total_agricola', 'total_pecuaria']]
+    top_municipalities = df.nlargest(20, 'total_final_nm_ano')[['nm_mun', 'total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano']]
     
     if len(top_municipalities) == 0:
         st.info("Nenhum município com potencial para análise")
@@ -224,12 +224,12 @@ def render_regional_analysis(df: pd.DataFrame) -> None:
         # Gráfico dos top municípios
         fig = px.bar(
             top_municipalities,
-            x='total_final',
+            x='total_final_nm_ano',
             y='nm_mun',
             orientation='h',
             title="Top 20 Municípios - Potencial Total",
-            labels={'total_final': 'Potencial (Nm³/ano)', 'nm_mun': 'Município'},
-            text='total_final'
+            labels={'total_final_nm_ano': 'Potencial (Nm³/ano)', 'nm_mun': 'Município'},
+            text='total_final_nm_ano'
         )
         fig.update_traces(
             texttemplate='%{text:,.0f}',
@@ -242,9 +242,9 @@ def render_regional_analysis(df: pd.DataFrame) -> None:
         # Tabela resumo dos top 10
         st.markdown("**Top 10 Resumo:**")
         top_10 = top_municipalities.head(10).copy()
-        top_10['total_final'] = top_10['total_final'].apply(lambda x: f"{x:,.0f}")
-        top_10['total_agricola'] = top_10['total_agricola'].apply(lambda x: f"{x:,.0f}")
-        top_10['total_pecuaria'] = top_10['total_pecuaria'].apply(lambda x: f"{x:,.0f}")
+        top_10['total_final_nm_ano'] = top_10['total_final_nm_ano'].apply(lambda x: f"{x:,.0f}")
+        top_10['total_agricola_nm_ano'] = top_10['total_agricola_nm_ano'].apply(lambda x: f"{x:,.0f}")
+        top_10['total_pecuaria_nm_ano'] = top_10['total_pecuaria_nm_ano'].apply(lambda x: f"{x:,.0f}")
         
         top_10.columns = ['Município', 'Total', 'Agrícola', 'Pecuária']
         st.dataframe(top_10, hide_index=True)
@@ -266,7 +266,7 @@ def render_viability_indicators(df: pd.DataFrame) -> None:
     # Classificar municípios
     df_analysis = df.copy()
     df_analysis['viability_class'] = pd.cut(
-        df_analysis['total_final'],
+        df_analysis['total_final_nm_ano'],
         bins=[0, medium_potential_threshold, high_potential_threshold, float('inf')],
         labels=['Baixa', 'Média', 'Alta'],
         include_lowest=True
@@ -359,8 +359,8 @@ def render_executive_dashboard(df: pd.DataFrame) -> None:
     # Insights e recomendações
     st.subheader("💡 Insights e Recomendações")
     
-    total_potential = df['total_final'].sum()
-    municipalities_with_potential = len(df[df['total_final'] > 0])
+    total_potential = df['total_final_nm_ano'].sum()
+    municipalities_with_potential = len(df[df['total_final_nm_ano'] > 0])
     
     insights = []
     
@@ -372,7 +372,7 @@ def render_executive_dashboard(df: pd.DataFrame) -> None:
         )
         
         # Insight sobre concentração
-        top_10_potential = df.nlargest(10, 'total_final')['total_final'].sum()
+        top_10_potential = df.nlargest(10, 'total_final_nm_ano')['total_final_nm_ano'].sum()
         concentration_percent = (top_10_potential / total_potential) * 100
         insights.append(
             f"📊 **Concentração:** Os top 10 municípios concentram {concentration_percent:.1f}% do potencial total, "
@@ -380,9 +380,9 @@ def render_executive_dashboard(df: pd.DataFrame) -> None:
         )
         
         # Insight sobre fontes
-        if 'total_agricola' in df.columns and 'total_pecuaria' in df.columns:
-            agri_total = df['total_agricola'].sum()
-            pecu_total = df['total_pecuaria'].sum()
+        if 'total_agricola_nm_ano' in df.columns and 'total_pecuaria_nm_ano' in df.columns:
+            agri_total = df['total_agricola_nm_ano'].sum()
+            pecu_total = df['total_pecuaria_nm_ano'].sum()
             if agri_total + pecu_total > 0:
                 agri_percent = (agri_total / (agri_total + pecu_total)) * 100
                 insights.append(

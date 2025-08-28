@@ -212,7 +212,7 @@ class CP2BDashboard:
                     filtered_df['display_value'] = filtered_df['total_final_nm_ano']
             
             else:  # Total Geral
-                filtered_df['display_value'] = filtered_df['total_final']
+                filtered_df['display_value'] = filtered_df['total_final_nm_ano']
             
             st.session_state.current_filters = filters
             return filtered_df

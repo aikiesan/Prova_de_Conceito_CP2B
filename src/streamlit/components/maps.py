@@ -32,9 +32,9 @@ def load_and_process_shapefile():
         
         # Mapear colunas do shapefile
         biogas_mapping = {
-            'Bio_Final': 'total_final',
-            'Bio_Agric': 'total_agricola', 
-            'Bio_Pecuar': 'total_pecuaria',
+            'Bio_Final': 'total_final_nm_ano',
+            'Bio_Agric': 'total_agricola_nm_ano', 
+            'Bio_Pecuar': 'total_pecuaria_nm_ano',
             'Bio_Cana': 'biogas_cana',
             'Bio_Soja': 'biogas_soja',
             'Bio_Milho': 'biogas_milho',
@@ -117,7 +117,7 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     
     # Limitar municípios
     if len(gdf_filtered) > max_municipalities:
-        top_municipios = gdf_filtered.nlargest(max_municipalities, 'total_final')
+        top_municipios = gdf_filtered.nlargest(max_municipalities, 'total_final_nm_ano')
     else:
         top_municipios = gdf_filtered
     
@@ -128,7 +128,7 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     if 'display_value' in top_municipios.columns:
         potencial_values = top_municipios['display_value']
     else:
-        potencial_values = top_municipios['total_final']
+        potencial_values = top_municipios['total_final_nm_ano']
     
     if potencial_values.max() > 0:
         quantiles = potencial_values.quantile([0, 0.25, 0.5, 0.75, 1.0]).values
@@ -154,13 +154,13 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
             if pd.isna(row['lat']) or pd.isna(row['lon']):
                 continue
                 
-            potencial = row.get('display_value', row['total_final'])
+            potencial = row.get('display_value', row['total_final_nm_ano'])
             
             popup_html = f"""
             <div style='width: 250px; font-family: Arial;'>
                 <h4>{row['nm_mun']}</h4>
                 <b>Valor Exibido:</b> {potencial:,.0f} Nm³/ano<br>
-                <b>Total Geral:</b> {row['total_final']:,.0f} Nm³/ano<br>
+                <b>Total Geral:</b> {row['total_final_nm_ano']:,.0f} Nm³/ano<br>
                 <b>Agrícola:</b> {row.get('total_agricola', 0):,.0f} Nm³/ano<br>
                 <b>Pecuária:</b> {row.get('total_pecuaria', 0):,.0f} Nm³/ano<br>
                 <b>Código:</b> {row['cd_mun']}<br>
@@ -559,7 +559,7 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
         cd_mun = row['cd_mun']
         if cd_mun in municipios_dict:
             sqlite_data = municipios_dict[cd_mun]
-            for col in ['total_final', 'total_agricola', 'total_pecuaria']:
+            for col in ['total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano']:
                 if col in sqlite_data:
                     gdf_filtered.at[idx, col] = float(sqlite_data[col] or 0)
     

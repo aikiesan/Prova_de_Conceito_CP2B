@@ -89,7 +89,7 @@ class SidebarFilters:
             'icon': '🐄',
             'description': 'Soma de todas as fontes pecuárias'
         },
-        'total_final': {
+        'total_final_nm_ano': {
             'label': 'TOTAL GERAL',
             'icon': '🎯',
             'description': 'Potencial total de biogás do município'
@@ -101,7 +101,7 @@ def load_municipalities_for_sidebar() -> pd.DataFrame:
     """Carrega municípios para dropdown da sidebar com cache"""
     try:
         df = query_df("""
-            SELECT cd_mun, nm_mun, total_final 
+            SELECT cd_mun, nm_mun, total_final_nm_ano 
             FROM municipios 
             ORDER BY nm_mun ASC
         """)
@@ -170,7 +170,7 @@ def render_municipality_selector() -> List[str]:
             if not filtered_muns.empty:
                 st.sidebar.info(f"Encontrados {len(filtered_muns)} municípios")
                 mun_options = [
-                    f"{row['nm_mun']} ({row['cd_mun']}) - {row['total_final']:,.0f} Nm³/ano" 
+                    f"{row['nm_mun']} ({row['cd_mun']}) - {row['total_final_nm_ano']:,.0f} Nm³/ano" 
                     for _, row in filtered_muns.iterrows()
                 ]
             else:
@@ -179,7 +179,7 @@ def render_municipality_selector() -> List[str]:
         else:
             # Mostrar todos se não há termo de busca
             mun_options = [
-                f"{row['nm_mun']} ({row['cd_mun']}) - {row['total_final']:,.0f} Nm³/ano" 
+                f"{row['nm_mun']} ({row['cd_mun']}) - {row['total_final_nm_ano']:,.0f} Nm³/ano" 
                 for _, row in df_muns.head(50).iterrows()  # Limitar a 50 iniciais
             ]
         
@@ -201,10 +201,10 @@ def render_municipality_selector() -> List[str]:
         )
         
         # Mostrar os top municípios
-        top_muns = df_muns.nlargest(top_n, 'total_final')
+        top_muns = df_muns.nlargest(top_n, 'total_final_nm_ano')
         
         selected_muns = [
-            f"{row['nm_mun']} ({row['cd_mun']}) - {row['total_final']:,.0f} Nm³/ano"
+            f"{row['nm_mun']} ({row['cd_mun']}) - {row['total_final_nm_ano']:,.0f} Nm³/ano"
             for _, row in top_muns.iterrows()
         ]
         
@@ -357,7 +357,7 @@ def render_analysis_options() -> Dict[str, Any]:
     
     # Ordenação padrão
     sort_options = {
-        'total_final': 'Potencial Total',
+        'total_final_nm_ano': 'Potencial Total',
         'nm_mun': 'Nome do Município',
         'total_agricola': 'Total Agrícola', 
         'total_pecuaria': 'Total Pecuária',
