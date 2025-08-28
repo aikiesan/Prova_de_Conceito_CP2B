@@ -19,6 +19,7 @@ from components.maps import render_map
 from components.charts import top_municipios_bar
 from components.tables import render_table
 from components.executive_dashboard import render_executive_dashboard
+from components.residue_analysis import render_residue_analysis_dashboard
 from utils.database import (
     query_df, MunicipalQueries, get_cache_stats, 
     clear_cache, initialize_database
@@ -422,11 +423,12 @@ class CP2BDashboard:
             self.render_summary_metrics(filtered_df, show_all_municipalities)
             st.markdown("---")
             
-            # Layout em tabs
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            # Layout em tabs - Adicionada nova aba para análise de resíduos
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
                 "🗺️ Mapa Interativo", 
                 "🎯 Simulador", 
                 "📈 Dashboard Executivo",
+                "🔬 Análise Resíduos",
                 "📊 Análises", 
                 "📋 Tabela", 
                 "🔧 Debug"
@@ -550,6 +552,10 @@ class CP2BDashboard:
                 render_executive_dashboard(filtered_df)
             
             with tab4:
+                # Nova aba de análise detalhada de resíduos
+                render_residue_analysis_dashboard(filtered_df)
+            
+            with tab5:
                 create_section_header("Análises Detalhadas", "📊", "success")
                 
                 # Só mostrar gráfico se houver dados com potencial
@@ -560,13 +566,13 @@ class CP2BDashboard:
                     if st.session_state.get('show_debug', False):
                         st.info("Nenhum município com potencial > 0 para análise gráfica")
             
-            with tab5:
+            with tab6:
                 create_section_header("Dados Tabulares", "📋", "info")
                 columns = ['nm_mun', 'cd_mun', 'total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano', 'area_km2']
                 available_columns = [col for col in columns if col in filtered_df.columns]
                 render_table(filtered_df[available_columns])
             
-            with tab6:
+            with tab7:
                 if st.session_state.get('show_debug'):
                     create_section_header("Sistema e Debug", "🔧", "danger")
                     

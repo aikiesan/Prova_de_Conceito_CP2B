@@ -105,6 +105,169 @@ def load_additional_shapefiles():
     
     return loaded
 
+def create_detailed_popup(row: pd.Series, potencial: float, filters: Dict = None) -> str:
+    """Cria popup detalhado baseado no modo de visualização"""
+    
+    # Definir título baseado no modo
+    if filters and filters.get('visualization'):
+        viz_mode = filters['visualization']
+        mode = viz_mode.get('mode', 'Total Geral')
+        
+        if mode == "Por Fonte Específica":
+            source_names = {
+                'biogas_cana_nm_ano': '🌾 Cana-de-açúcar',
+                'biogas_soja_nm_ano': '🌱 Soja', 
+                'biogas_milho_nm_ano': '🌽 Milho',
+                'biogas_bovinos_nm_ano': '🐄 Bovinos',
+                'biogas_cafe_nm_ano': '☕ Café',
+                'biogas_citros_nm_ano': '🍊 Citros',
+                'biogas_suino_nm_ano': '🐷 Suínos',
+                'biogas_aves_nm_ano': '🐔 Aves',
+                'biogas_piscicultura_nm_ano': '🐟 Piscicultura',
+                'rsu_potencial_nm_habitante_ano': '🗑️ RSU',
+                'rpo_potencial_nm_habitante_ano': '🌿 RPO'
+            }
+            source = viz_mode.get('source', '')
+            title_detail = source_names.get(source, 'Fonte Específica')
+        elif mode == "Por Categoria":
+            category_names = {
+                'Agrícola': '🌾 Setor Agrícola',
+                'Pecuária': '🐄 Setor Pecuário', 
+                'Urbano': '🏙️ Setor Urbano'
+            }
+            category = viz_mode.get('category', '')
+            title_detail = category_names.get(category, 'Categoria')
+        else:
+            title_detail = '⚡ Potencial Total'
+    else:
+        title_detail = '⚡ Potencial Total'
+    
+    # Cores por categoria
+    category_colors = {
+        'Agrícola': '#48bb78',
+        'Pecuária': '#ed8936', 
+        'Urbano': '#4299e1',
+        'Total': '#667eea'
+    }
+    
+    # Seção de detalhamento por resíduos específicos
+    residue_details = ""
+    if filters and filters.get('visualization', {}).get('mode') == "Por Fonte Específica":
+        source = filters['visualization'].get('source', '')
+        if source in row.index:
+            residue_details = f"""
+            <div style='background: #f0f9ff; padding: 8px; border-radius: 6px; border-left: 3px solid #0ea5e9; margin: 8px 0;'>
+                <strong style='color: #0ea5e9; font-size: 11px;'>🔍 DETALHAMENTO DA FONTE</strong><br>
+                <span style='font-size: 13px; font-weight: 600; color: #1e40af;'>
+                    {row.get(source, 0):,.0f} Nm³/ano
+                </span>
+                <div style='font-size: 10px; color: #64748b; margin-top: 2px;'>
+                    {(row.get(source, 0) / row['total_final_nm_ano'] * 100 if row['total_final_nm_ano'] > 0 else 0):,.1f}% do potencial municipal
+                </div>
+            </div>
+            """
+    
+    # Grid com dados de resíduos individuais
+    agricultural_sources = f"""
+    <div style='background: #f0fdf4; padding: 6px; border-radius: 4px; margin: 4px 0;'>
+        <strong style='color: #16a34a; font-size: 10px;'>🌾 AGRÍCOLA</strong>
+        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9px; margin-top: 3px;'>
+            <div>Cana: {row.get('biogas_cana_nm_ano', 0):,.0f}</div>
+            <div>Soja: {row.get('biogas_soja_nm_ano', 0):,.0f}</div>
+            <div>Milho: {row.get('biogas_milho_nm_ano', 0):,.0f}</div>
+            <div>Café: {row.get('biogas_cafe_nm_ano', 0):,.0f}</div>
+            <div>Citros: {row.get('biogas_citros_nm_ano', 0):,.0f}</div>
+        </div>
+    </div>
+    """
+    
+    livestock_sources = f"""
+    <div style='background: #fef7ed; padding: 6px; border-radius: 4px; margin: 4px 0;'>
+        <strong style='color: #ea580c; font-size: 10px;'>🐄 PECUÁRIA</strong>
+        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9px; margin-top: 3px;'>
+            <div>Bovinos: {row.get('biogas_bovinos_nm_ano', 0):,.0f}</div>
+            <div>Suínos: {row.get('biogas_suino_nm_ano', 0):,.0f}</div>
+            <div>Aves: {row.get('biogas_aves_nm_ano', 0):,.0f}</div>
+            <div>Piscicultura: {row.get('biogas_piscicultura_nm_ano', 0):,.0f}</div>
+        </div>
+    </div>
+    """
+    
+    urban_sources = f"""
+    <div style='background: #eff6ff; padding: 6px; border-radius: 4px; margin: 4px 0;'>
+        <strong style='color: #2563eb; font-size: 10px;'>🏙️ URBANO</strong>
+        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9px; margin-top: 3px;'>
+            <div>RSU: {row.get('rsu_potencial_nm_habitante_ano', 0):,.0f}</div>
+            <div>RPO: {row.get('rpo_potencial_nm_habitante_ano', 0):,.0f}</div>
+        </div>
+    </div>
+    """
+    
+    popup_html = f"""
+    <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                width: 320px; padding: 12px; border-radius: 8px; background: #fff;'>
+        <div style='border-bottom: 3px solid #667eea; padding-bottom: 8px; margin-bottom: 12px;'>
+            <h4 style='margin: 0; color: #2c3e50; font-size: 18px; font-weight: 600;'>
+                🏛️ {row['nm_mun']}
+            </h4>
+            <div style='font-size: 11px; color: #6b7280;'>
+                {title_detail}
+            </div>
+        </div>
+        
+        <div style='display: grid; gap: 8px;'>
+            <div style='background: linear-gradient(135deg, #667eea20, #764ba220); 
+                        padding: 8px; border-radius: 6px; border-left: 3px solid #667eea;'>
+                <strong style='color: #667eea; font-size: 12px;'>⚡ POTENCIAL EXIBIDO</strong><br>
+                <span style='font-size: 16px; font-weight: 700; color: #2c3e50;'>
+                    {potencial:,.0f}
+                </span> <span style='color: #6b7280; font-size: 12px;'>Nm³/ano</span>
+            </div>
+            
+            {residue_details}
+            
+            <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;'>
+                <div>
+                    <strong style='color: #48bb78;'>🌾 Agrícola:</strong><br>
+                    <span style='font-weight: 600;'>{row.get("total_agricola_nm_ano", 0):,.0f}</span>
+                </div>
+                <div>
+                    <strong style='color: #ed8936;'>🐄 Pecuária:</strong><br>
+                    <span style='font-weight: 600;'>{row.get("total_pecuaria_nm_ano", 0):,.0f}</span>
+                </div>
+                <div>
+                    <strong style='color: #4299e1;'>📊 Total:</strong><br>
+                    <span style='font-weight: 600;'>{row["total_final_nm_ano"]:,.0f}</span>
+                </div>
+                <div>
+                    <strong style='color: #9f7aea;'>📍 Área:</strong><br>
+                    <span style='font-weight: 600;'>{row.get("area_km2", 0):,.1f} km²</span>
+                </div>
+            </div>
+            
+            <!-- Expansão com detalhes por resíduo -->
+            <details style='margin-top: 8px;'>
+                <summary style='font-size: 11px; font-weight: 600; color: #374151; cursor: pointer; 
+                               padding: 4px; border-radius: 4px; background: #f9fafb;'>
+                    🔍 Ver detalhes por resíduo
+                </summary>
+                <div style='margin-top: 6px;'>
+                    {agricultural_sources}
+                    {livestock_sources}
+                    {urban_sources}
+                </div>
+            </details>
+            
+            <div style='text-align: center; margin-top: 8px; padding: 4px; 
+                        background: #f8f9fa; border-radius: 4px; font-size: 10px; color: #6b7280;'>
+                🔢 Código Municipal: <strong>{row["cd_mun"]}</strong>
+            </div>
+        </div>
+    </div>
+    """
+    
+    return popup_html
+
 def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: int = 200, additional_layers: Dict = None, layer_controls: Dict = None, visualization_mode: str = "Compacto (Recomendado)", filters: Dict = None) -> folium.Map:
     """Cria mapa limpo com marcadores individuais para melhor leitura"""
     # Centro otimizado para São Paulo
@@ -669,7 +832,8 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
             max_municipalities, 
             additional_layers=additional_layers,
             layer_controls=layer_controls,
-            visualization_mode=visualization_mode
+            visualization_mode=visualization_mode,
+            filters=filters
         )
         
         map_data = st_folium(
