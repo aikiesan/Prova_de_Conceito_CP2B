@@ -1,7 +1,6 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from folium.plugins import MarkerCluster
 import geopandas as gpd
 import pandas as pd
 from pathlib import Path
@@ -106,14 +105,22 @@ def load_additional_shapefiles():
     
     return loaded
 
-def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: int = 200, additional_layers: Dict = None, layer_controls: Dict = None) -> folium.Map:
-    """Cria mapa limpo com marcadores"""
-    center_lat, center_lon = -23.5, -47.5
+def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: int = 200, additional_layers: Dict = None, layer_controls: Dict = None, visualization_mode: str = "Compacto (Recomendado)", filters: Dict = None) -> folium.Map:
+    """Cria mapa limpo com marcadores individuais para melhor leitura"""
+    # Centro otimizado para São Paulo
+    center_lat, center_lon = -23.2, -47.8
     
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=7,
-        tiles='OpenStreetMap'
+        tiles='OpenStreetMap',
+        # Configurações otimizadas para melhor experiência
+        min_zoom=6,      # Evita zoom muito distante
+        max_zoom=18,     # Permite zoom detalhado
+        zoom_control=True,
+        scrollWheelZoom=True,
+        doubleClickZoom=True,
+        dragging=True
     )
     
     # Limitar municípios
@@ -125,8 +132,33 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     if len(top_municipios) == 0:
         return m
     
-    # Definir cores baseado na coluna de display
-    if 'display_value' in top_municipios.columns:
+    # Definir cores baseado na coluna de display e modo de visualização
+    if filters and filters.get('visualization'):
+        viz_mode = filters['visualization']
+        if viz_mode.get('mode') == "Por Fonte Específica" and viz_mode.get('source'):
+            # Usar fonte específica para coloração
+            source_col = viz_mode['source']
+            if source_col in top_municipios.columns:
+                potencial_values = top_municipios[source_col]
+            else:
+                potencial_values = top_municipios.get('display_value', top_municipios['total_final_nm_ano'])
+        elif viz_mode.get('mode') == "Por Categoria" and viz_mode.get('category'):
+            # Usar categoria específica para coloração
+            category = viz_mode['category']
+            if category == "Agrícola":
+                potencial_values = top_municipios.get('total_agricola_nm_ano', top_municipios['total_final_nm_ano'])
+            elif category == "Pecuária":
+                potencial_values = top_municipios.get('total_pecuaria_nm_ano', top_municipios['total_final_nm_ano'])
+            elif category == "Urbano":
+                # RSU + RPO urbano
+                rsu_col = top_municipios.get('rsu_potencial_nm_habitante_ano', 0)
+                rpo_col = top_municipios.get('rpo_potencial_nm_habitante_ano', 0)
+                potencial_values = rsu_col + rpo_col
+            else:
+                potencial_values = top_municipios.get('display_value', top_municipios['total_final_nm_ano'])
+        else:
+            potencial_values = top_municipios.get('display_value', top_municipios['total_final_nm_ano'])
+    elif 'display_value' in top_municipios.columns:
         potencial_values = top_municipios['display_value']
     else:
         potencial_values = top_municipios['total_final_nm_ano']
@@ -179,90 +211,70 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
             else:
                 return colors['muito_alto']
         
-        # Criar cluster para municípios (performance otimizada)
-        marker_cluster = MarkerCluster(
+        # Criar grupo de marcadores sem clustering para melhor leitura visual
+        municipios_group = folium.FeatureGroup(
             name="📍 Municípios (Biogás)",
             overlay=True,
             control=True,
-            show=True,
-            options={
-                'disableClusteringAtZoom': 12,  # Desabilita clustering em zoom alto
-                'maxClusterRadius': 60,         # Raio máximo do cluster
-                'spiderfyOnMaxZoom': True,     # Expande marcadores sobrepostos
-                'showCoverageOnHover': False,   # Não mostrar área de cobertura
-                'zoomToBoundsOnClick': True    # Zoom ao clicar no cluster
-            }
+            show=True
         )
         
-        # Adicionar marcadores ao cluster
+        # Adicionar marcadores individuais sem agregação
         for _, row in top_municipios.iterrows():
             if pd.isna(row['lat']) or pd.isna(row['lon']):
                 continue
                 
             potencial = row.get('display_value', row['total_final_nm_ano'])
             
-            # Popup otimizado com design moderno
-            popup_html = f"""
-            <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-                        width: 280px; padding: 12px; border-radius: 8px; background: #fff;'>
-                <div style='border-bottom: 3px solid #667eea; padding-bottom: 8px; margin-bottom: 12px;'>
-                    <h4 style='margin: 0; color: #2c3e50; font-size: 18px; font-weight: 600;'>
-                        🏛️ {row['nm_mun']}
-                    </h4>
-                </div>
-                
-                <div style='display: grid; gap: 8px;'>
-                    <div style='background: linear-gradient(135deg, #667eea20, #764ba220); 
-                                padding: 8px; border-radius: 6px; border-left: 3px solid #667eea;'>
-                        <strong style='color: #667eea; font-size: 12px;'>⚡ POTENCIAL EXIBIDO</strong><br>
-                        <span style='font-size: 16px; font-weight: 700; color: #2c3e50;'>
-                            {potencial:,.0f}
-                        </span> <span style='color: #6b7280; font-size: 12px;'>Nm³/ano</span>
-                    </div>
-                    
-                    <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;'>
-                        <div>
-                            <strong style='color: #48bb78;'>🌾 Agrícola:</strong><br>
-                            <span style='font-weight: 600;'>{row.get("total_agricola", 0):,.0f}</span>
-                        </div>
-                        <div>
-                            <strong style='color: #ed8936;'>🐄 Pecuária:</strong><br>
-                            <span style='font-weight: 600;'>{row.get("total_pecuaria", 0):,.0f}</span>
-                        </div>
-                        <div>
-                            <strong style='color: #4299e1;'>📊 Total:</strong><br>
-                            <span style='font-weight: 600;'>{row["total_final_nm_ano"]:,.0f}</span>
-                        </div>
-                        <div>
-                            <strong style='color: #9f7aea;'>📍 Área:</strong><br>
-                            <span style='font-weight: 600;'>{row.get("area_km2", 0):,.1f} km²</span>
-                        </div>
-                    </div>
-                    
-                    <div style='text-align: center; margin-top: 8px; padding: 4px; 
-                                background: #f8f9fa; border-radius: 4px; font-size: 10px; color: #6b7280;'>
-                        🔢 Código Municipal: <strong>{row["cd_mun"]}</strong>
-                    </div>
-                </div>
-            </div>
-            """
+            # Popup otimizado com detalhamento por resíduo
+            popup_html = create_detailed_popup(row, potencial, filters)
             
-            # Raio dinâmico melhorado
-            radius = max(5, min(18, (potencial / potencial_values.max()) * 18)) if potencial_values.max() > 0 else 6
+            # Configurações baseadas no modo de visualização
+            if visualization_mode == "Minimalista":
+                max_radius = 5
+                min_radius = 2
+                stroke_weight = 0.5
+                fill_opacity = 0.6
+                border_opacity = 0.7
+            elif visualization_mode == "Detalhado":
+                max_radius = 12
+                min_radius = 4
+                stroke_weight = 1.5
+                fill_opacity = 0.85
+                border_opacity = 1.0
+            else:  # Compacto (Recomendado)
+                max_radius = 8
+                min_radius = 3
+                stroke_weight = 1.0
+                fill_opacity = 0.75
+                border_opacity = 0.9
+            
+            # Escala não-linear para melhor diferenciação visual
+            if potencial_values.max() > 0:
+                # Usar raiz quadrada para suavizar diferenças extremas
+                normalized_value = (potencial / potencial_values.max()) ** 0.5
+                radius = max(min_radius, min_radius + (max_radius - min_radius) * normalized_value)
+            else:
+                radius = min_radius
+            
+            # Stroke otimizado para separação sem sobreposição
+            stroke_color = '#333333'  # Cinza escuro para melhor contraste
             
             folium.CircleMarker(
                 location=[row['lat'], row['lon']],
                 radius=radius,
                 popup=folium.Popup(popup_html, max_width=320),
                 tooltip=f"🏛️ {row['nm_mun']}: {potencial:,.0f} Nm³/ano",
-                color='#2c3e50',          # Borda mais elegante
-                weight=2,                 # Borda mais definida
+                color=stroke_color,
+                weight=stroke_weight,
                 fillColor=get_color(potencial),
-                fillOpacity=0.8           # Mais opaco para melhor visibilidade
-            ).add_to(marker_cluster)
+                fillOpacity=fill_opacity,
+                opacity=border_opacity,
+                bubblingMouseEvents=False # Evita conflitos de eventos
+            ).add_to(municipios_group)
         
-        # Adicionar cluster ao mapa
-        marker_cluster.add_to(m)
+        # Adicionar grupo de municípios ao mapa
+        municipios_group.add_to(m)
         
         # Legenda interativa avançada
         if potencial_values.max() > 0:
@@ -275,7 +287,7 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     return m
 
 def create_interactive_legend(m: folium.Map, municipios_data: pd.DataFrame, colors: List[str], potencial_values: pd.Series) -> None:
-    """Cria legenda simplificada e performática"""
+    """Cria legenda otimizada para melhor interpretação dos dados sem clustering"""
     
     if municipios_data.empty or len(colors) == 0:
         return
@@ -284,65 +296,112 @@ def create_interactive_legend(m: folium.Map, municipios_data: pd.DataFrame, colo
         max_potencial = float(potencial_values.max()) if not potencial_values.empty else 0
         total_municipios = len(municipios_data)
         
-        # Legenda simplificada - apenas 30 linhas vs 150+ anteriores
+        # Calcular valores reais dos breakpoints para exibição
+        breakpoints_display = {
+            'muito_baixo': max_potencial * 0.05,
+            'baixo': max_potencial * 0.15,
+            'medio_baixo': max_potencial * 0.35,
+            'medio': max_potencial * 0.55,
+            'medio_alto': max_potencial * 0.75,
+            'alto': max_potencial * 0.90,
+        }
+        
+        # Legenda melhorada com valores reais e sem referências ao clustering
         legend_html = f"""
-        <div style='position: fixed; top: 10px; right: 10px; width: 200px; 
-                    background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
+        <div style='position: fixed; top: 10px; right: 10px; width: 220px; 
+                    background: rgba(255,255,255,0.96); backdrop-filter: blur(10px);
                     border: 1px solid rgba(0,0,0,0.1); z-index: 9999; 
-                    border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+                    border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;'>
             
-            <!-- Header com gradiente moderno -->
+            <!-- Header melhorado -->
             <div style='padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         color: white; border-radius: 12px 12px 0 0; font-weight: 600; font-size: 13px;'>
                 <div style='display: flex; align-items: center; gap: 8px;'>
-                    <span style='font-size: 16px;'>📊</span>
+                    <span style='font-size: 16px;'>🌱</span>
                     <span>Potencial de Biogás</span>
+                </div>
+                <div style='font-size: 10px; opacity: 0.9; margin-top: 2px;'>
+                    Visualização Individual
                 </div>
             </div>
             
-            <!-- Escala de cores -->
+            <!-- Escala de cores com valores reais -->
             <div style='padding: 16px;'>
                 <div style='margin-bottom: 12px;'>
                     <div style='font-weight: 500; margin-bottom: 8px; color: #2d3748; font-size: 12px;'>
                         Intensidade (Nm³/ano)
                     </div>
-                    <div style='display: flex; flex-direction: column; gap: 4px;'>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #7f2704;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Excepcional (&gt;90%)</span>
+                    <div style='display: flex; flex-direction: column; gap: 3px;'>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #7f2704; border: 1px solid white;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Excepcional</span>
+                                <div style='font-size: 9px; color: #6b7280;'>&gt; {breakpoints_display['alto']:,.0f}</div>
+                            </div>
                         </div>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #a63603;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Alto (75-90%)</span>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #a63603; border: 1px solid white;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Alto</span>
+                                <div style='font-size: 9px; color: #6b7280;'>{breakpoints_display['medio_alto']:,.0f} - {breakpoints_display['alto']:,.0f}</div>
+                            </div>
                         </div>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #e6550d;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Médio-Alto (55-75%)</span>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #e6550d; border: 1px solid white;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Médio-Alto</span>
+                                <div style='font-size: 9px; color: #6b7280;'>{breakpoints_display['medio']:,.0f} - {breakpoints_display['medio_alto']:,.0f}</div>
+                            </div>
                         </div>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #fd8d3c;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Médio (35-55%)</span>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #fd8d3c; border: 1px solid white;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Médio</span>
+                                <div style='font-size: 9px; color: #6b7280;'>{breakpoints_display['medio_baixo']:,.0f} - {breakpoints_display['medio']:,.0f}</div>
+                            </div>
                         </div>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #fdae6b;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Baixo (15-35%)</span>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #fdae6b; border: 1px solid white;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Baixo</span>
+                                <div style='font-size: 9px; color: #6b7280;'>{breakpoints_display['baixo']:,.0f} - {breakpoints_display['medio_baixo']:,.0f}</div>
+                            </div>
                         </div>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #fdd49e;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Muito Baixo (5-15%)</span>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #fdd49e; border: 1px solid white;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Muito Baixo</span>
+                                <div style='font-size: 9px; color: #6b7280;'>{breakpoints_display['muito_baixo']:,.0f} - {breakpoints_display['baixo']:,.0f}</div>
+                            </div>
                         </div>
-                        <div style='display: flex; align-items: center; gap: 6px;'>
-                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #e8e8e8;'></div>
-                            <span style='font-size: 11px; color: #4a5568;'>Zero</span>
+                        <div style='display: flex; align-items: center; gap: 8px;'>
+                            <div style='width: 14px; height: 14px; border-radius: 50%; background: #e8e8e8; border: 1px solid #ccc;'></div>
+                            <div style='flex: 1;'>
+                                <span style='font-size: 11px; color: #2d3748; font-weight: 500;'>Zero</span>
+                                <div style='font-size: 9px; color: #6b7280;'>Sem potencial</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Stats rápidas -->
-                <div style='padding: 8px; background: #f7fafc; border-radius: 6px; font-size: 10px;'>
-                    <div style='color: #2d3748;'><strong>{total_municipios}</strong> municípios</div>
-                    <div style='color: #4a5568;'>Max: {max_potencial:,.0f}</div>
+                <!-- Stats melhoradas -->
+                <div style='padding: 10px; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); 
+                            border-radius: 8px; font-size: 10px; border: 1px solid #e2e8f0;'>
+                    <div style='display: flex; justify-content: space-between; margin-bottom: 4px;'>
+                        <span style='color: #4a5568;'>Municípios:</span>
+                        <strong style='color: #2d3748;'>{total_municipios}</strong>
+                    </div>
+                    <div style='display: flex; justify-content: space-between;'>
+                        <span style='color: #4a5568;'>Máximo:</span>
+                        <strong style='color: #2d3748;'>{max_potencial:,.0f}</strong>
+                    </div>
+                </div>
+                
+                <!-- Dica de navegação -->
+                <div style='margin-top: 8px; padding: 6px; background: #fffbeb; border-radius: 4px; 
+                            border-left: 3px solid #f59e0b; font-size: 9px; color: #92400e;'>
+                    💡 <strong>Dica:</strong> Clique nos pontos para detalhes
                 </div>
             </div>
         </div>
@@ -351,17 +410,18 @@ def create_interactive_legend(m: folium.Map, municipios_data: pd.DataFrame, colo
         m.get_root().html.add_child(folium.Element(legend_html))
         
     except Exception:
-        # Fallback ultra-simples
+        # Fallback melhorado
         simple_legend = f"""
         <div style='position: fixed; top: 10px; right: 10px; background: white; 
                     padding: 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     font-family: system-ui; font-size: 12px; z-index: 9999;'>
-            <div style='font-weight: 600; margin-bottom: 8px; color: #2d3748;'>Biogás SP</div>
-            <div><span style='color: #7f2704;'>●</span> Excepcional</div>
-            <div><span style='color: #a63603;'>●</span> Alto</div>
-            <div><span style='color: #fd8d3c;'>●</span> Médio</div>
-            <div><span style='color: #fdd49e;'>●</span> Baixo</div>
-            <div><span style='color: #e8e8e8;'>●</span> Zero</div>
+            <div style='font-weight: 600; margin-bottom: 8px; color: #2d3748;'>🌱 Biogás SP</div>
+            <div style='margin-bottom: 4px;'><span style='color: #7f2704; font-size: 14px;'>●</span> Excepcional</div>
+            <div style='margin-bottom: 4px;'><span style='color: #a63603; font-size: 14px;'>●</span> Alto</div>
+            <div style='margin-bottom: 4px;'><span style='color: #fd8d3c; font-size: 14px;'>●</span> Médio</div>
+            <div style='margin-bottom: 4px;'><span style='color: #fdd49e; font-size: 14px;'>●</span> Baixo</div>
+            <div><span style='color: #e8e8e8; font-size: 14px;'>●</span> Zero</div>
+            <div style='margin-top: 8px; font-size: 10px; color: #6b7280;'>{total_municipios} municípios</div>
         </div>
         """
         m.get_root().html.add_child(folium.Element(simple_legend))
@@ -545,22 +605,33 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
     with col1:
         max_municipalities = st.slider(
             "Máximo de Municípios no Mapa:",
-            min_value=50, max_value=645, value=200, step=25
+            min_value=25, max_value=645, value=100, step=25,
+            help="Quantidade reduzida para melhor legibilidade - evita sobreposição de pontos"
         )
 
     with col2:
+        # Opções de visualização
+        visualization_mode = st.selectbox(
+            "Estilo de Visualização:",
+            options=["Compacto (Recomendado)", "Detalhado", "Minimalista"],
+            index=0,
+            help="Compacto: pontos menores, menos sobreposição | Detalhado: mais informações | Minimalista: apenas essencial"
+        )
+        
         # Mostrar status das camadas carregadas
         if additional_layers:
             layers_loaded = len(additional_layers)
-            st.success(f"✅ {layers_loaded} camada(s) adicional(is) carregada(s)")
-            st.info("🎛️ **Controle de Camadas:** Use o painel no canto superior direito do mapa para ativar/desativar camadas individualmente")
+            st.success(f"✅ {layers_loaded} camada(s) adicional(is)")
         else:
-            st.info("📍 Apenas camada principal de municípios ativa")
+            st.info("📍 Camada principal ativa")
 
     with col3:
         if st.button("🔄 Atualizar"):
             st.cache_data.clear()
             st.rerun()
+    
+    # Informação sobre melhorias
+    st.info("✅ **Melhorias implementadas:** Agrupamento de pontos desabilitado, raios otimizados para evitar sobreposição, visualização individual de cada município.")
     
     # Processar dados
     if hasattr(municipios_data, 'to_dict'):
@@ -597,7 +668,8 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
             gdf_filtered, 
             max_municipalities, 
             additional_layers=additional_layers,
-            layer_controls=layer_controls
+            layer_controls=layer_controls,
+            visualization_mode=visualization_mode
         )
         
         map_data = st_folium(

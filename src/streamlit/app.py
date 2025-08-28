@@ -26,7 +26,7 @@ from utils.database import (
 from utils.calculations import (
     recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
 )
-from utils.styling import inject_global_css, create_gradient_header, create_section_header, create_metric_card
+from utils.styling import inject_global_css, create_gradient_header, create_section_header, create_metric_card, create_theme_toggle
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -354,8 +354,11 @@ class CP2BDashboard:
                 
                 st.stop()
             
-            # Aplicar CSS limpo
-            inject_global_css()
+            # Toggle de tema
+            dark_mode = create_theme_toggle()
+            
+            # Aplicar CSS com tema selecionado
+            inject_global_css(dark_mode)
             
             # Cabeçalho principal
             create_gradient_header(

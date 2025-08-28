@@ -50,31 +50,56 @@ def show_loading_spinner() -> None:
     )
 
 
-def inject_global_css() -> None:
+def inject_global_css(dark_mode: bool = False) -> None:
+    # Definir cores baseado no modo
+    if dark_mode:
+        colors = {
+            "bg_primary": "#000000",
+            "bg_secondary": "#1a1a1a", 
+            "bg_tertiary": "#2d2d2d",
+            "text_primary": "#ffffff",
+            "text_secondary": "#b3b3b3",
+            "text_muted": "#808080",
+            "border_color": "#404040",
+            "shadow_opacity": "0.3"
+        }
+    else:
+        colors = {
+            "bg_primary": "#ffffff",
+            "bg_secondary": "#f7fafc",
+            "bg_tertiary": "#edf2f7", 
+            "text_primary": "#1a202c",
+            "text_secondary": "#4a5568",
+            "text_muted": "#718096",
+            "border_color": "#e2e8f0",
+            "shadow_opacity": "0.1"
+        }
+
     st.markdown(
-        """
+        f"""
         <style>
         /* ==== SISTEMA DE CORES MODERNO ==== */
-        :root {
+        :root {{
             --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             --success-gradient: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
             --warning-gradient: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
             --info-gradient: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
             --danger-gradient: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
             
-            --bg-primary: #ffffff;
-            --bg-secondary: #f7fafc;
-            --bg-tertiary: #edf2f7;
-            --text-primary: #1a202c;
-            --text-secondary: #4a5568;
-            --text-muted: #718096;
-            --border-color: #e2e8f0;
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-            --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.06);
-            --shadow-lg: 0 10px 25px rgba(0,0,0,0.15), 0 4px 10px rgba(0,0,0,0.1);
+            /* Cores dinâmicas baseadas no modo */
+            --bg-primary: {colors["bg_primary"]};
+            --bg-secondary: {colors["bg_secondary"]};
+            --bg-tertiary: {colors["bg_tertiary"]};
+            --text-primary: {colors["text_primary"]};
+            --text-secondary: {colors["text_secondary"]};
+            --text-muted: {colors["text_muted"]};
+            --border-color: {colors["border_color"]};
+            --shadow-sm: 0 1px 3px rgba(0,0,0,{colors["shadow_opacity"]}), 0 1px 2px rgba(0,0,0,0.24);
+            --shadow-md: 0 4px 6px rgba(0,0,0,{colors["shadow_opacity"]}), 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 25px rgba(0,0,0,{colors["shadow_opacity"]}), 0 4px 10px rgba(0,0,0,0.1);
             --radius: 12px;
             --radius-sm: 8px;
-        }
+        }}
         
         /* ==== LAYOUT E TIPOGRAFIA ==== */
         .main > div {
@@ -84,7 +109,7 @@ def inject_global_css() -> None:
         }
         
         .stApp {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            background: var(--bg-primary) !important;
         }
         
         /* ==== HEADERS COM GRADIENTE ==== */
@@ -121,6 +146,7 @@ def inject_global_css() -> None:
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+            color: var(--text-primary);
         }
         
         .metric-card:hover {
@@ -205,6 +231,17 @@ def inject_global_css() -> None:
             padding: 1rem;
             margin-bottom: 1rem;
             box-shadow: var(--shadow-sm);
+            color: var(--text-primary);
+        }
+
+        /* Streamlit sidebar styling */
+        .css-1d391kg {
+            background: var(--bg-primary) !important;
+        }
+
+        .css-1lcbmhc {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
         }
         
         /* ==== TABELAS E DATAFRAMES ==== */
@@ -235,11 +272,22 @@ def inject_global_css() -> None:
         .stSelectbox > div > div {
             border-radius: var(--radius-sm);
             border: 1px solid var(--border-color);
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
         }
         
         .stNumberInput > div > div {
             border-radius: var(--radius-sm);
             border: 1px solid var(--border-color);
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+
+        .stTextInput > div > div {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
         }
         
         /* ==== PROGRESS BARS ==== */
@@ -257,15 +305,33 @@ def inject_global_css() -> None:
         
         /* ==== TABS MODERNAS ==== */
         .stTabs > div > div > div > div {
-            background: var(--bg-primary);
+            background: var(--bg-secondary);
             border-radius: var(--radius) var(--radius) 0 0;
             border-bottom: 3px solid transparent;
+            color: var(--text-primary);
         }
         
         .stTabs > div > div > div > div[aria-selected="true"] {
             border-bottom: 3px solid #667eea;
             background: var(--primary-gradient);
-            color: white;
+            color: white !important;
+        }
+
+        /* Métricas do Streamlit */
+        [data-testid="metric-container"] {
+            background: var(--bg-primary) !important;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 1rem;
+            color: var(--text-primary) !important;
+        }
+
+        [data-testid="metric-container"] > div {
+            color: var(--text-primary) !important;
+        }
+
+        [data-testid="metric-container"] label {
+            color: var(--text-secondary) !important;
         }
         
         /* ==== LOADING E SPINNERS ==== */
@@ -352,5 +418,29 @@ def inject_global_css() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def create_theme_toggle() -> bool:
+    """Cria toggle para alternar entre dark/light mode"""
+    
+    # Inicializar estado se não existir
+    if 'dark_mode' not in st.session_state:
+        st.session_state.dark_mode = False
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        dark_mode = st.toggle(
+            "🌙 Dark Mode" if not st.session_state.dark_mode else "☀️ Light Mode",
+            value=st.session_state.dark_mode,
+            help="Alternar entre tema claro e escuro"
+        )
+        
+        # Atualizar estado se mudou
+        if dark_mode != st.session_state.dark_mode:
+            st.session_state.dark_mode = dark_mode
+            st.rerun()
+    
+    return st.session_state.dark_mode
 
 
