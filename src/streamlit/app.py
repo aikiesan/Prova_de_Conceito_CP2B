@@ -10,19 +10,23 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 # Imports dos componentes
-from .components.sidebar import render_sidebar
-from .components.maps import render_map
-from .components.charts import top_municipios_bar
-from .components.tables import render_table
-from .components.executive_dashboard import render_executive_dashboard
-from .utils.database import (
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from components.sidebar import render_sidebar
+from components.maps import render_map
+from components.charts import top_municipios_bar
+from components.tables import render_table
+from components.executive_dashboard import render_executive_dashboard
+from utils.database import (
     query_df, MunicipalQueries, get_cache_stats, 
     clear_cache, initialize_database
 )
-from .utils.calculations import (
+from utils.calculations import (
     recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
 )
-from .utils.styling import inject_global_css
+from utils.styling import inject_global_css
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
