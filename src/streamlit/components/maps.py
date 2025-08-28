@@ -1,6 +1,7 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import MarkerCluster
 import geopandas as gpd
 import pandas as pd
 from pathlib import Path
@@ -131,62 +132,141 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
         potencial_values = top_municipios['total_final_nm_ano']
     
     if potencial_values.max() > 0:
-        quantiles = potencial_values.quantile([0, 0.25, 0.5, 0.75, 1.0]).values
-        colors = ['#cccccc', '#c2e699', '#78c679', '#31a354', '#006837']
+        # Sistema de cores mais intuitivo e moderno
+        max_potencial = potencial_values.max()
+        
+        # Definir breakpoints baseados em análise de viabilidade econômica
+        # Categorias inspiradas em semáforo + gradações para melhor interpretação
+        breakpoints = {
+            'zero': 0,
+            'muito_baixo': max_potencial * 0.05,      # 5% do máximo
+            'baixo': max_potencial * 0.15,            # 15% do máximo  
+            'medio_baixo': max_potencial * 0.35,      # 35% do máximo
+            'medio': max_potencial * 0.55,            # 55% do máximo
+            'medio_alto': max_potencial * 0.75,       # 75% do máximo
+            'alto': max_potencial * 0.90,             # 90% do máximo
+        }
+        
+        # Paleta de cores moderna e intuitiva - do cinza ao laranja/vermelho
+        # Usando sistema de cores que facilita interpretação visual
+        colors = {
+            'zero': '#e8e8e8',           # Cinza neutro para zero
+            'muito_baixo': '#fff5f0',     # Quase branco - potencial mínimo
+            'baixo': '#fdd49e',          # Laranja claro - atenção
+            'medio_baixo': '#fdae6b',     # Laranja - potencial emergindo
+            'medio': '#fd8d3c',          # Laranja médio - potencial moderado
+            'medio_alto': '#e6550d',      # Laranja escuro - bom potencial
+            'alto': '#a63603',           # Marrom - alto potencial
+            'muito_alto': '#7f2704'      # Marrom escuro - potencial excepcional
+        }
         
         def get_color(potencial):
+            """Retorna cor baseada em thresholds intuitivos de viabilidade"""
             if potencial == 0:
-                return colors[0]
-            elif potencial <= quantiles[1]:
-                return colors[1]
-            elif potencial <= quantiles[2]:
-                return colors[2]
-            elif potencial <= quantiles[3]:
-                return colors[3]
+                return colors['zero']
+            elif potencial <= breakpoints['muito_baixo']:
+                return colors['muito_baixo']
+            elif potencial <= breakpoints['baixo']:
+                return colors['baixo']
+            elif potencial <= breakpoints['medio_baixo']:
+                return colors['medio_baixo']
+            elif potencial <= breakpoints['medio']:
+                return colors['medio']
+            elif potencial <= breakpoints['medio_alto']:
+                return colors['medio_alto']
+            elif potencial <= breakpoints['alto']:
+                return colors['alto']
             else:
-                return colors[4]
+                return colors['muito_alto']
         
-        # Criar grupo para municípios (camada base)
-        municipios_group = folium.FeatureGroup(name="📍 Municípios (Biogás)", show=True)
+        # Criar cluster para municípios (performance otimizada)
+        marker_cluster = MarkerCluster(
+            name="📍 Municípios (Biogás)",
+            overlay=True,
+            control=True,
+            show=True,
+            options={
+                'disableClusteringAtZoom': 12,  # Desabilita clustering em zoom alto
+                'maxClusterRadius': 60,         # Raio máximo do cluster
+                'spiderfyOnMaxZoom': True,     # Expande marcadores sobrepostos
+                'showCoverageOnHover': False,   # Não mostrar área de cobertura
+                'zoomToBoundsOnClick': True    # Zoom ao clicar no cluster
+            }
+        )
         
-        # Adicionar marcadores ao grupo
+        # Adicionar marcadores ao cluster
         for _, row in top_municipios.iterrows():
             if pd.isna(row['lat']) or pd.isna(row['lon']):
                 continue
                 
             potencial = row.get('display_value', row['total_final_nm_ano'])
             
+            # Popup otimizado com design moderno
             popup_html = f"""
-            <div style='width: 250px; font-family: Arial;'>
-                <h4>{row['nm_mun']}</h4>
-                <b>Valor Exibido:</b> {potencial:,.0f} Nm³/ano<br>
-                <b>Total Geral:</b> {row['total_final_nm_ano']:,.0f} Nm³/ano<br>
-                <b>Agrícola:</b> {row.get('total_agricola', 0):,.0f} Nm³/ano<br>
-                <b>Pecuária:</b> {row.get('total_pecuaria', 0):,.0f} Nm³/ano<br>
-                <b>Código:</b> {row['cd_mun']}<br>
-                <b>Área:</b> {row.get('area_km2', 0):,.1f} km²
+            <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                        width: 280px; padding: 12px; border-radius: 8px; background: #fff;'>
+                <div style='border-bottom: 3px solid #667eea; padding-bottom: 8px; margin-bottom: 12px;'>
+                    <h4 style='margin: 0; color: #2c3e50; font-size: 18px; font-weight: 600;'>
+                        🏛️ {row['nm_mun']}
+                    </h4>
+                </div>
+                
+                <div style='display: grid; gap: 8px;'>
+                    <div style='background: linear-gradient(135deg, #667eea20, #764ba220); 
+                                padding: 8px; border-radius: 6px; border-left: 3px solid #667eea;'>
+                        <strong style='color: #667eea; font-size: 12px;'>⚡ POTENCIAL EXIBIDO</strong><br>
+                        <span style='font-size: 16px; font-weight: 700; color: #2c3e50;'>
+                            {potencial:,.0f}
+                        </span> <span style='color: #6b7280; font-size: 12px;'>Nm³/ano</span>
+                    </div>
+                    
+                    <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;'>
+                        <div>
+                            <strong style='color: #48bb78;'>🌾 Agrícola:</strong><br>
+                            <span style='font-weight: 600;'>{row.get("total_agricola", 0):,.0f}</span>
+                        </div>
+                        <div>
+                            <strong style='color: #ed8936;'>🐄 Pecuária:</strong><br>
+                            <span style='font-weight: 600;'>{row.get("total_pecuaria", 0):,.0f}</span>
+                        </div>
+                        <div>
+                            <strong style='color: #4299e1;'>📊 Total:</strong><br>
+                            <span style='font-weight: 600;'>{row["total_final_nm_ano"]:,.0f}</span>
+                        </div>
+                        <div>
+                            <strong style='color: #9f7aea;'>📍 Área:</strong><br>
+                            <span style='font-weight: 600;'>{row.get("area_km2", 0):,.1f} km²</span>
+                        </div>
+                    </div>
+                    
+                    <div style='text-align: center; margin-top: 8px; padding: 4px; 
+                                background: #f8f9fa; border-radius: 4px; font-size: 10px; color: #6b7280;'>
+                        🔢 Código Municipal: <strong>{row["cd_mun"]}</strong>
+                    </div>
+                </div>
             </div>
             """
             
-            radius = max(4, min(15, (potencial / potencial_values.max()) * 15)) if potencial_values.max() > 0 else 4
+            # Raio dinâmico melhorado
+            radius = max(5, min(18, (potencial / potencial_values.max()) * 18)) if potencial_values.max() > 0 else 6
             
             folium.CircleMarker(
                 location=[row['lat'], row['lon']],
                 radius=radius,
-                popup=folium.Popup(popup_html, max_width=260),
-                tooltip=f"{row['nm_mun']}: {potencial:,.0f} Nm³/ano",
-                color='black',
-                weight=1,
+                popup=folium.Popup(popup_html, max_width=320),
+                tooltip=f"🏛️ {row['nm_mun']}: {potencial:,.0f} Nm³/ano",
+                color='#2c3e50',          # Borda mais elegante
+                weight=2,                 # Borda mais definida
                 fillColor=get_color(potencial),
-                fillOpacity=0.7
-            ).add_to(municipios_group)
+                fillOpacity=0.8           # Mais opaco para melhor visibilidade
+            ).add_to(marker_cluster)
         
-        # Adicionar grupo dos municípios ao mapa
-        municipios_group.add_to(m)
+        # Adicionar cluster ao mapa
+        marker_cluster.add_to(m)
         
         # Legenda interativa avançada
         if potencial_values.max() > 0:
-            create_interactive_legend(m, top_municipios, colors, potencial_values)
+            create_interactive_legend(m, top_municipios, list(colors.values()), potencial_values)
     
     # Adicionar camadas adicionais se disponíveis
     if additional_layers and layer_controls:
@@ -195,155 +275,96 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     return m
 
 def create_interactive_legend(m: folium.Map, municipios_data: pd.DataFrame, colors: List[str], potencial_values: pd.Series) -> None:
-    """Cria legenda interativa detalhada com estatísticas"""
+    """Cria legenda simplificada e performática"""
     
-    # Verificações de segurança
     if municipios_data.empty or len(colors) == 0:
         return
     
     try:
-        # Valores padrão para estatísticas
-        total_municipios = len(municipios_data)
         max_potencial = float(potencial_values.max()) if not potencial_values.empty else 0
+        total_municipios = len(municipios_data)
         
-        # Determinar camada ativa
-        current_layer = 'Total Geral'
-        if 'display_value' in municipios_data.columns:
-            # Verificar se é uma fonte específica
-            if municipios_data['display_value'].equals(municipios_data.get('total_agricola', pd.Series())):
-                current_layer = 'Agrícola'
-            elif municipios_data['display_value'].equals(municipios_data.get('total_pecuaria', pd.Series())):
-                current_layer = 'Pecuária'
-        
-        # Criar HTML da legenda simplificada
+        # Legenda simplificada - apenas 30 linhas vs 150+ anteriores
         legend_html = f"""
-        <div id='interactive-legend' style='
-            position: fixed; top: 10px; right: 10px; width: 280px; 
-            background: white; border: 1px solid #ccc; z-index: 9999; 
-            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            font-family: Arial, sans-serif; font-size: 12px;'>
+        <div style='position: fixed; top: 10px; right: 10px; width: 200px; 
+                    background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
+                    border: 1px solid rgba(0,0,0,0.1); z-index: 9999; 
+                    border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;'>
             
-            <!-- Cabeçalho -->
-            <div style='padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                        color: white; border-radius: 8px 8px 0 0; font-weight: 600;'>
-                <div style='display: flex; justify-content: space-between; align-items: center;'>
-                    <span>📊 Análise de Biogás</span>
-                    <button id='legend-toggle' onclick='toggleLegend()' 
-                            style='border: none; background: rgba(255,255,255,0.2); color: white;
-                                   cursor: pointer; font-size: 12px; border-radius: 4px; padding: 2px 6px;'>
-                        ▼
-                    </button>
+            <!-- Header com gradiente moderno -->
+            <div style='padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        color: white; border-radius: 12px 12px 0 0; font-weight: 600; font-size: 13px;'>
+                <div style='display: flex; align-items: center; gap: 8px;'>
+                    <span style='font-size: 16px;'>📊</span>
+                    <span>Potencial de Biogás</span>
                 </div>
             </div>
             
-            <div id='legend-content' style='padding: 12px;'>
-                
-                <!-- Camada Ativa -->
-                <div style='margin-bottom: 12px; padding: 8px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #006837;'>
-                    <div style='font-weight: 600; color: #495057; margin-bottom: 4px;'>
-                        Camada Ativa
-                    </div>
-                    <div style='font-size: 14px; color: #212529;'>
-                        🎯 {current_layer}
-                    </div>
-                    <div style='font-size: 10px; color: #6c757d; margin-top: 4px;'>
-                        Máximo: {max_potencial:,.0f} Nm³/ano
-                    </div>
-                </div>
-                
-                <!-- Escala de Cores -->
+            <!-- Escala de cores -->
+            <div style='padding: 16px;'>
                 <div style='margin-bottom: 12px;'>
-                    <div style='font-weight: 500; margin-bottom: 6px; color: #495057;'>
-                        Escala de Intensidade
+                    <div style='font-weight: 500; margin-bottom: 8px; color: #2d3748; font-size: 12px;'>
+                        Intensidade (Nm³/ano)
                     </div>
-                    <div style='display: flex; align-items: center; gap: 4px; margin-bottom: 4px;'>
-                        <span style='color:{colors[4] if len(colors) > 4 else "#006837"}; font-size: 18px;'>●</span>
-                        <span style='font-size: 11px;'>Alto (&gt; 75%)</span>
-                    </div>
-                    <div style='display: flex; align-items: center; gap: 4px; margin-bottom: 4px;'>
-                        <span style='color:{colors[3] if len(colors) > 3 else "#31a354"}; font-size: 18px;'>●</span>
-                        <span style='font-size: 11px;'>Médio-Alto (50-75%)</span>
-                    </div>
-                    <div style='display: flex; align-items: center; gap: 4px; margin-bottom: 4px;'>
-                        <span style='color:{colors[2] if len(colors) > 2 else "#78c679"}; font-size: 18px;'>●</span>
-                        <span style='font-size: 11px;'>Médio (25-50%)</span>
-                    </div>
-                    <div style='display: flex; align-items: center; gap: 4px; margin-bottom: 4px;'>
-                        <span style='color:{colors[1] if len(colors) > 1 else "#c2e699"}; font-size: 18px;'>●</span>
-                        <span style='font-size: 11px;'>Baixo (1-25%)</span>
-                    </div>
-                    <div style='display: flex; align-items: center; gap: 4px;'>
-                        <span style='color:{colors[0] if len(colors) > 0 else "#cccccc"}; font-size: 18px;'>●</span>
-                        <span style='font-size: 11px;'>Zero</span>
-                    </div>
-                </div>
-                
-                <!-- Estatísticas Resumidas -->
-                <div style='margin-bottom: 12px;'>
-                    <div style='font-weight: 500; margin-bottom: 6px; color: #495057;'>
-                        Estatísticas da Visualização
-                    </div>
-                    <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;'>
-                        <div style='background: #e8f5e8; padding: 6px; border-radius: 4px; text-align: center;'>
-                            <div style='font-weight: 600; color: #155724;'>{total_municipios:,}</div>
-                            <div style='color: #155724;'>Municípios</div>
+                    <div style='display: flex; flex-direction: column; gap: 4px;'>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #7f2704;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Excepcional (&gt;90%)</span>
                         </div>
-                        <div style='background: #f8d7da; padding: 6px; border-radius: 4px; text-align: center;'>
-                            <div style='font-weight: 600; color: #721c24;'>{max_potencial:,.0f}</div>
-                            <div style='color: #721c24;'>Máximo</div>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #a63603;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Alto (75-90%)</span>
+                        </div>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #e6550d;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Médio-Alto (55-75%)</span>
+                        </div>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #fd8d3c;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Médio (35-55%)</span>
+                        </div>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #fdae6b;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Baixo (15-35%)</span>
+                        </div>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #fdd49e;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Muito Baixo (5-15%)</span>
+                        </div>
+                        <div style='display: flex; align-items: center; gap: 6px;'>
+                            <div style='width: 12px; height: 12px; border-radius: 50%; background: #e8e8e8;'></div>
+                            <span style='font-size: 11px; color: #4a5568;'>Zero</span>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Dicas de Uso -->
-                <div style='padding: 8px; background: #e9ecef; border-radius: 4px; font-size: 10px; color: #495057;'>
-                    <div style='font-weight: 500; margin-bottom: 2px;'>💡 Dicas:</div>
-                    <div>• Use os controles da sidebar para alterar a visualização</div>
-                    <div>• Clique nos municípios para ver detalhes</div>
-                    <div>• Use o controle de camadas para contexto geográfico</div>
+                <!-- Stats rápidas -->
+                <div style='padding: 8px; background: #f7fafc; border-radius: 6px; font-size: 10px;'>
+                    <div style='color: #2d3748;'><strong>{total_municipios}</strong> municípios</div>
+                    <div style='color: #4a5568;'>Max: {max_potencial:,.0f}</div>
                 </div>
-                
             </div>
         </div>
-        
-        <!-- JavaScript para funcionalidade -->
-        <script>
-            let isLegendExpanded = true;
-            
-            function toggleLegend() {{
-                const content = document.getElementById('legend-content');
-                const button = document.getElementById('legend-toggle');
-                
-                if (isLegendExpanded) {{
-                    content.style.display = 'none';
-                    button.innerHTML = '▲';
-                    isLegendExpanded = false;
-                }} else {{
-                    content.style.display = 'block';
-                    button.innerHTML = '▼';
-                    isLegendExpanded = true;
-                }}
-            }}
-        </script>
         """
         
         m.get_root().html.add_child(folium.Element(legend_html))
         
-    except Exception as e:
-        # Em caso de erro, criar uma legenda básica
-        simple_legend_html = """
-        <div style='position: fixed; top: 10px; right: 10px; width: 200px; 
-                    background: white; border: 1px solid #ccc; z-index: 9999; 
-                    font-size: 12px; padding: 8px; border-radius: 4px;'>
-            <b>Potencial de Biogás</b><br>
-            <div style='margin: 2px 0;'><span style='color:#006837; font-size: 16px;'>●</span> Alto</div>
-            <div style='margin: 2px 0;'><span style='color:#31a354; font-size: 16px;'>●</span> Médio-Alto</div>
-            <div style='margin: 2px 0;'><span style='color:#78c679; font-size: 16px;'>●</span> Médio</div>
-            <div style='margin: 2px 0;'><span style='color:#c2e699; font-size: 16px;'>●</span> Baixo</div>
-            <div style='margin: 2px 0;'><span style='color:#cccccc; font-size: 16px;'>●</span> Zero</div>
+    except Exception:
+        # Fallback ultra-simples
+        simple_legend = f"""
+        <div style='position: fixed; top: 10px; right: 10px; background: white; 
+                    padding: 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    font-family: system-ui; font-size: 12px; z-index: 9999;'>
+            <div style='font-weight: 600; margin-bottom: 8px; color: #2d3748;'>Biogás SP</div>
+            <div><span style='color: #7f2704;'>●</span> Excepcional</div>
+            <div><span style='color: #a63603;'>●</span> Alto</div>
+            <div><span style='color: #fd8d3c;'>●</span> Médio</div>
+            <div><span style='color: #fdd49e;'>●</span> Baixo</div>
+            <div><span style='color: #e8e8e8;'>●</span> Zero</div>
         </div>
         """
-        m.get_root().html.add_child(folium.Element(simple_legend_html))
+        m.get_root().html.add_child(folium.Element(simple_legend))
 
 def add_additional_layers_to_map(folium_map: folium.Map, additional_layers: Dict, layer_controls: Dict) -> None:
     """Adiciona camadas adicionais ao mapa usando Feature Groups para controle individual"""

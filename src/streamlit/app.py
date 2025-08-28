@@ -26,7 +26,7 @@ from utils.database import (
 from utils.calculations import (
     recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
 )
-from utils.styling import inject_global_css
+from utils.styling import inject_global_css, create_gradient_header, create_section_header, create_metric_card
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -256,54 +256,65 @@ class CP2BDashboard:
         with_potential = len(df[df['total_final_nm_ano'] > 0])
         without_potential = total_municipios - with_potential
         
+        # Cards modernos com ícones
         col1, col2, col3, col4 = st.columns(4)
+        
+        total_potential = df['total_final_nm_ano'].sum() if not df.empty else 0
         
         with col1:
             if show_all_mode:
-                st.metric(
+                delta_text = f"{with_potential} com potencial • {without_potential} zero"
+                create_metric_card(
+                    "🏛️", 
+                    f"{total_municipios:,}", 
                     "Total de Municípios",
-                    value=f"{total_municipios:,}",
-                    delta=f"{with_potential} com potencial",
-                    help=f"Todos os municípios carregados ({without_potential} com potencial zero)"
+                    delta_text
                 )
             else:
-                st.metric(
-                    "Municípios (Potencial > 0)",
-                    value=f"{total_municipios:,}",
-                    help="Apenas municípios com potencial de biogás"
+                create_metric_card(
+                    "🏛️", 
+                    f"{total_municipios:,}", 
+                    "Municípios com Potencial",
+                    "Filtrados > 0"
                 )
         
         with col2:
-            total_potential = df['total_final_nm_ano'].sum() if not df.empty else 0
-            st.metric(
+            # Converter para milhões para melhor visualização
+            potential_millions = total_potential / 1_000_000
+            create_metric_card(
+                "⚡", 
+                f"{potential_millions:.1f}M", 
                 "Potencial Total",
-                value=f"{total_potential:,.0f} Nm³/ano",
-                help="Soma do potencial de biogás de todos os municípios"
+                "Nm³/ano"
             )
         
         with col3:
             if with_potential > 0:
-                # Média apenas dos que têm potencial
                 avg_potential = df[df['total_final_nm_ano'] > 0]['total_final_nm_ano'].mean()
-                st.metric(
-                    "Média (com potencial)",
-                    value=f"{avg_potential:,.0f} Nm³/ano",
-                    help=f"Média dos {with_potential} municípios com potencial > 0"
+                avg_thousands = avg_potential / 1_000
+                create_metric_card(
+                    "📊", 
+                    f"{avg_thousands:.0f}k", 
+                    "Média Municipal",
+                    f"De {with_potential} municípios"
                 )
             else:
-                st.metric("Média", value="0 Nm³/ano")
+                create_metric_card("📊", "0", "Média Municipal", "Sem dados")
         
         with col4:
             max_potential = df['total_final_nm_ano'].max() if not df.empty else 0
             max_city = ""
             if not df.empty and max_potential > 0:
                 max_city = df.loc[df['total_final_nm_ano'].idxmax(), 'nm_mun']
-            
-            st.metric(
-                "Maior Potencial",
-                value=f"{max_potential:,.0f} Nm³/ano",
-                help=f"Município: {max_city}" if max_city else "Nenhum potencial encontrado"
-            )
+                max_millions = max_potential / 1_000_000
+                create_metric_card(
+                    "🥇", 
+                    f"{max_millions:.1f}M", 
+                    "Maior Potencial",
+                    max_city[:15] + ("..." if len(max_city) > 15 else "")
+                )
+            else:
+                create_metric_card("🥇", "0", "Maior Potencial", "Sem dados")
     
     def render_error_handling(self) -> bool:
         """Interface de tratamento de erros"""
@@ -351,9 +362,12 @@ class CP2BDashboard:
             # Aplicar estilos
             inject_global_css()
             
-            # Cabeçalho
-            st.title("CP2B - Sistema de Análise Geoespacial para Biogás")
-            st.markdown("---")
+            # Cabeçalho moderno com gradiente
+            create_gradient_header(
+                "CP2B - Sistema de Análise Geoespacial para Biogás", 
+                "Plataforma inteligente para análise do potencial de biogás em São Paulo",
+                "🌱"
+            )
             
             # Controle de modo de dados
             show_all_municipalities = self.render_data_mode_selector()
@@ -421,6 +435,7 @@ class CP2BDashboard:
             ])
             
             with tab1:
+                create_section_header("Mapa Interativo", "🗺️", "info")
                 
                 # Informações sobre os dados do mapa
                 col1, col2 = st.columns([3, 1])
@@ -467,7 +482,7 @@ class CP2BDashboard:
                         st.exception(e)
             
             with tab2:
-                st.subheader("Simulador de Cenários de Potencial")
+                create_section_header("Simulador de Cenários", "🎯", "warning")
                 
                 # Renderizar simulador
                 scenario_config = render_scenario_simulator()
@@ -537,7 +552,7 @@ class CP2BDashboard:
                 render_executive_dashboard(filtered_df)
             
             with tab4:
-                st.subheader("Análise dos Principais Municípios")
+                create_section_header("Análises Detalhadas", "📊", "success")
                 
                 # Só mostrar gráfico se houver dados com potencial
                 chart_data = filtered_df[filtered_df['total_final_nm_ano'] > 0]
@@ -548,14 +563,14 @@ class CP2BDashboard:
                         st.info("Nenhum município com potencial > 0 para análise gráfica")
             
             with tab5:
-                st.subheader("Tabela Completa dos Municípios")
+                create_section_header("Dados Tabulares", "📋", "info")
                 columns = ['nm_mun', 'cd_mun', 'total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano', 'area_km2']
                 available_columns = [col for col in columns if col in filtered_df.columns]
                 render_table(filtered_df[available_columns])
             
             with tab6:
                 if st.session_state.get('show_debug'):
-                    st.subheader("Informações de Debug")
+                    create_section_header("Sistema e Debug", "🔧", "danger")
                     
                     col1, col2 = st.columns(2)
                     with col1:
