@@ -27,7 +27,10 @@ from utils.database import (
 from utils.calculations import (
     recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
 )
-from utils.styling import inject_global_css, create_gradient_header, create_section_header, create_metric_card, create_theme_toggle
+from utils.styling import (
+    inject_global_css, create_gradient_header, create_section_header, 
+    create_metric_card, create_theme_toggle
+)
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
