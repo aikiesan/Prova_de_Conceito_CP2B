@@ -2,10 +2,10 @@ import streamlit as st
 
 
 def create_gradient_header(title: str, subtitle: str = "", icon: str = "🌱") -> None:
-    """Cria header com gradiente moderno"""
+    """Cria header limpo sem gradiente"""
     st.markdown(
         f"""
-        <div class="gradient-header fade-in">
+        <div class="clean-header fade-in">
             <h1>{icon} {title}</h1>
             {f'<p>{subtitle}</p>' if subtitle else ''}
         </div>
@@ -112,28 +112,30 @@ def inject_global_css(dark_mode: bool = False) -> None:
             background: var(--bg-primary) !important;
         }
         
-        /* ==== HEADERS COM GRADIENTE ==== */
-        .gradient-header {
-            background: var(--primary-gradient);
-            color: white;
+        /* ==== HEADERS LIMPOS SEM GRADIENTE ==== */
+        .clean-header {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
             padding: 1.5rem 2rem;
             border-radius: var(--radius);
             margin-bottom: 2rem;
-            box-shadow: var(--shadow-lg);
+            box-shadow: var(--shadow-md);
             text-align: center;
+            border: 1px solid var(--border-color);
         }
         
-        .gradient-header h1 {
+        .clean-header h1 {
             margin: 0;
             font-size: 2.5rem;
             font-weight: 700;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            color: var(--text-primary);
         }
         
-        .gradient-header p {
+        .clean-header p {
             margin: 0.5rem 0 0 0;
-            opacity: 0.9;
+            opacity: 0.8;
             font-size: 1.1rem;
+            color: var(--text-secondary);
         }
         
         /* ==== CARDS DE MÉTRICAS APRIMORADOS ==== */
@@ -193,14 +195,15 @@ def inject_global_css(dark_mode: bool = False) -> None:
             margin-top: 0.5rem;
         }
         
-        /* ==== SEÇÕES COM GRADIENTE ==== */
+        /* ==== SEÇÕES LIMPAS SEM GRADIENTE ==== */
         .section-header {
-            background: var(--success-gradient);
-            color: white;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
             padding: 1rem 1.5rem;
             border-radius: var(--radius);
             margin: 2rem 0 1rem 0;
-            box-shadow: var(--shadow-md);
+            box-shadow: var(--shadow-sm);
+            border-left: 4px solid #48bb78;
         }
         
         .section-header h2 {
@@ -210,18 +213,19 @@ def inject_global_css(dark_mode: bool = False) -> None:
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            color: var(--text-primary);
         }
         
         .section-header-info {
-            background: var(--info-gradient);
+            border-left-color: #4299e1;
         }
         
         .section-header-warning {
-            background: var(--warning-gradient);
+            border-left-color: #ed8936;
         }
         
         .section-header-danger {
-            background: var(--danger-gradient);
+            border-left-color: #f56565;
         }
         
         /* ==== SIDEBAR APRIMORADA ==== */
