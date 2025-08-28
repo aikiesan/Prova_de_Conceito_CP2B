@@ -19,7 +19,7 @@ class Municipio:
     nm_mun: str
     objectid: Optional[int] = None
     area_km2: Optional[float] = None
-    total_final: float = 0.0
+    total_final_nm_ano: float = 0.0
 
 
 def insert_municipio(data: Dict[str, Any]) -> None:
@@ -54,13 +54,13 @@ def list_municipios(limit: int = 1000, filters: Optional[Dict[str, Any]] = None)
         where.append("nm_mun LIKE ?")
         params.append(f"%{filters['nm_mun_like']}%")
     if "total_min" in filters:
-        where.append("total_final >= ?")
+        where.append("total_final_nm_ano >= ?")
         params.append(filters["total_min"])
     if "total_max" in filters:
-        where.append("total_final <= ?")
+        where.append("total_final_nm_ano <= ?")
         params.append(filters["total_max"])
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-    sql = f"SELECT * FROM municipios {where_sql} ORDER BY total_final DESC LIMIT ?"
+    sql = f"SELECT * FROM municipios {where_sql} ORDER BY total_final_nm_ano DESC LIMIT ?"
     params.append(limit)
     with get_connection() as conn:
         cur = conn.execute(sql, params)

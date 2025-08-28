@@ -19,15 +19,15 @@ def calculate_biogas_potential(residuos: float, fator: float) -> float:
 
 def recompute_total_by_sources(m_row: Dict[str, float], enabled_sources: Dict[str, bool]) -> float:
     sources = [
-        "biogas_cana",
-        "biogas_soja",
-        "biogas_milho",
-        "biogas_bovino",
-        "biogas_cafe",
-        "biogas_citros",
-        "biogas_suinos",
-        "biogas_aves",
-        "biogas_piscicultura",
+        "biogas_cana_nm_ano",
+        "biogas_soja_nm_ano",
+        "biogas_milho_nm_ano",
+        "biogas_bovinos_nm_ano",
+        "biogas_cafe_nm_ano",
+        "biogas_citros_nm_ano",
+        "biogas_suino_nm_ano",
+        "biogas_aves_nm_ano",
+        "biogas_piscicultura_nm_ano",
     ]
     total = 0.0
     for s in sources:
@@ -39,54 +39,58 @@ def recompute_total_by_sources(m_row: Dict[str, float], enabled_sources: Dict[st
 # Fatores de conversão padrão para diferentes cenários
 DEFAULT_CONVERSION_FACTORS = {
     'conservador': {
-        'biogas_cana': 50.0,      # m³/ton (bagaço + palha)
-        'biogas_soja': 35.0,      # m³/ton (restos culturais)
-        'biogas_milho': 40.0,     # m³/ton (sabugo + palha)
-        'biogas_cafe': 45.0,      # m³/ton (polpa + casca)
-        'biogas_citros': 30.0,    # m³/ton (bagaço)
-        'biogas_bovino': 25.0,    # m³/ton (esterco fresco)
-        'biogas_suinos': 60.0,    # m³/ton (dejetos)
-        'biogas_aves': 80.0,      # m³/ton (cama de frango)
-        'biogas_piscicultura': 20.0,  # m³/ton (resíduos)
-        'total_ch4_rsu_rpo': 100.0    # m³/ton (RSU)
+        'biogas_cana_nm_ano': 50.0,      # m³/ton (bagaço + palha)
+        'biogas_soja_nm_ano': 35.0,      # m³/ton (restos culturais)
+        'biogas_milho_nm_ano': 40.0,     # m³/ton (sabugo + palha)
+        'biogas_cafe_nm_ano': 45.0,      # m³/ton (polpa + casca)
+        'biogas_citros_nm_ano': 30.0,    # m³/ton (bagaço)
+        'biogas_bovinos_nm_ano': 25.0,    # m³/ton (esterco fresco)
+        'biogas_suino_nm_ano': 60.0,    # m³/ton (dejetos)
+        'biogas_aves_nm_ano': 80.0,      # m³/ton (cama de frango)
+        'biogas_piscicultura_nm_ano': 20.0,  # m³/ton (resíduos)
+        'rsu_potencial_nm_habitante_ano': 100.0,    # m³/habitante/ano (RSU)
+        'rpo_potencial_nm_habitante_ano': 50.0      # m³/habitante/ano (RPO)
     },
     'realista': {
-        'biogas_cana': 75.0,
-        'biogas_soja': 50.0,
-        'biogas_milho': 60.0,
-        'biogas_cafe': 65.0,
-        'biogas_citros': 45.0,
-        'biogas_bovino': 35.0,
-        'biogas_suinos': 80.0,
-        'biogas_aves': 100.0,
-        'biogas_piscicultura': 30.0,
-        'total_ch4_rsu_rpo': 150.0
+        'biogas_cana_nm_ano': 75.0,
+        'biogas_soja_nm_ano': 50.0,
+        'biogas_milho_nm_ano': 60.0,
+        'biogas_cafe_nm_ano': 65.0,
+        'biogas_citros_nm_ano': 45.0,
+        'biogas_bovinos_nm_ano': 35.0,
+        'biogas_suino_nm_ano': 80.0,
+        'biogas_aves_nm_ano': 100.0,
+        'biogas_piscicultura_nm_ano': 30.0,
+        'rsu_potencial_nm_habitante_ano': 150.0,
+        'rpo_potencial_nm_habitante_ano': 75.0
     },
     'otimista': {
-        'biogas_cana': 100.0,
-        'biogas_soja': 70.0,
-        'biogas_milho': 85.0,
-        'biogas_cafe': 90.0,
-        'biogas_citros': 65.0,
-        'biogas_bovino': 50.0,
-        'biogas_suinos': 120.0,
-        'biogas_aves': 140.0,
-        'biogas_piscicultura': 45.0,
-        'total_ch4_rsu_rpo': 200.0
+        'biogas_cana_nm_ano': 100.0,
+        'biogas_soja_nm_ano': 70.0,
+        'biogas_milho_nm_ano': 85.0,
+        'biogas_cafe_nm_ano': 90.0,
+        'biogas_citros_nm_ano': 65.0,
+        'biogas_bovinos_nm_ano': 50.0,
+        'biogas_suino_nm_ano': 120.0,
+        'biogas_aves_nm_ano': 140.0,
+        'biogas_piscicultura_nm_ano': 45.0,
+        'rsu_potencial_nm_habitante_ano': 200.0,
+        'rpo_potencial_nm_habitante_ano': 100.0
     }
 }
 
 BIOGAS_SOURCE_LABELS = {
-    'biogas_cana': '🌾 Cana-de-açúcar',
-    'biogas_soja': '🌱 Soja',
-    'biogas_milho': '🌽 Milho',
-    'biogas_cafe': '☕ Café',
-    'biogas_citros': '🍊 Citros',
-    'biogas_bovino': '🐄 Bovinos',
-    'biogas_suinos': '🐷 Suínos',
-    'biogas_aves': '🐔 Aves',
-    'biogas_piscicultura': '🐟 Piscicultura',
-    'total_ch4_rsu_rpo': '🗑️ RSU + RPO'
+    'biogas_cana_nm_ano': '🌾 Cana-de-açúcar',
+    'biogas_soja_nm_ano': '🌱 Soja',
+    'biogas_milho_nm_ano': '🌽 Milho',
+    'biogas_cafe_nm_ano': '☕ Café',
+    'biogas_citros_nm_ano': '🍊 Citros',
+    'biogas_bovinos_nm_ano': '🐄 Bovinos',
+    'biogas_suino_nm_ano': '🐷 Suínos',
+    'biogas_aves_nm_ano': '🐔 Aves',
+    'biogas_piscicultura_nm_ano': '🐟 Piscicultura',
+    'rsu_potencial_nm_habitante_ano': '🗑️ RSU (por hab.)',
+    'rpo_potencial_nm_habitante_ano': '🌳 RPO (por hab.)'
 }
 
 
@@ -133,9 +137,9 @@ def render_scenario_simulator() -> Dict[str, Any]:
     
     # Organizar por categoria
     categories = {
-        '🌾 Fontes Agrícolas': ['biogas_cana', 'biogas_soja', 'biogas_milho', 'biogas_cafe', 'biogas_citros'],
-        '🐄 Fontes Pecuárias': ['biogas_bovino', 'biogas_suinos', 'biogas_aves', 'biogas_piscicultura'],
-        '🗑️ Resíduos Urbanos': ['total_ch4_rsu_rpo']
+        '🌾 Fontes Agrícolas': ['biogas_cana_nm_ano', 'biogas_soja_nm_ano', 'biogas_milho_nm_ano', 'biogas_cafe_nm_ano', 'biogas_citros_nm_ano'],
+        '🐄 Fontes Pecuárias': ['biogas_bovinos_nm_ano', 'biogas_suino_nm_ano', 'biogas_aves_nm_ano', 'biogas_piscicultura_nm_ano'],
+        '🗑️ Resíduos Urbanos': ['rsu_potencial_nm_habitante_ano', 'rpo_potencial_nm_habitante_ano']
     }
     
     for category, sources in categories.items():
@@ -241,8 +245,8 @@ def apply_scenario_to_data(df: pd.DataFrame, scenario_config: Dict[str, Any]) ->
     df_scenario['total_final_scenario'] = df_scenario[biogas_sources].sum(axis=1)
     
     # Recalcular totais por categoria
-    agricola_sources = ['biogas_cana', 'biogas_soja', 'biogas_milho', 'biogas_cafe', 'biogas_citros']
-    pecuaria_sources = ['biogas_bovino', 'biogas_suinos', 'biogas_aves', 'biogas_piscicultura']
+    agricola_sources = ['biogas_cana_nm_ano', 'biogas_soja_nm_ano', 'biogas_milho_nm_ano', 'biogas_cafe_nm_ano', 'biogas_citros_nm_ano']
+    pecuaria_sources = ['biogas_bovinos_nm_ano', 'biogas_suino_nm_ano', 'biogas_aves_nm_ano', 'biogas_piscicultura_nm_ano']
     
     df_scenario['total_agricola_scenario'] = df_scenario[[col for col in agricola_sources if col in df_scenario.columns]].sum(axis=1)
     df_scenario['total_pecuaria_scenario'] = df_scenario[[col for col in pecuaria_sources if col in df_scenario.columns]].sum(axis=1)

@@ -10,19 +10,19 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 # Imports dos componentes
-from components.sidebar import render_sidebar
-from components.maps import render_map
-from components.charts import top_municipios_bar
-from components.tables import render_table
-from components.executive_dashboard import render_executive_dashboard
-from utils.database import (
+from .components.sidebar import render_sidebar
+from .components.maps import render_map
+from .components.charts import top_municipios_bar
+from .components.tables import render_table
+from .components.executive_dashboard import render_executive_dashboard
+from .utils.database import (
     query_df, MunicipalQueries, get_cache_stats, 
     clear_cache, initialize_database
 )
-from utils.calculations import (
+from .utils.calculations import (
     recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
 )
-from utils.styling import inject_global_css
+from .utils.styling import inject_global_css
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -91,9 +91,9 @@ class CP2BDashboard:
             
             # Garantir que todas as colunas de biogás existem
             biogas_columns = [
-                'biogas_cana', 'biogas_soja', 'biogas_milho', 'biogas_bovino',
-                'biogas_cafe', 'biogas_citros', 'biogas_suinos', 'biogas_aves',
-                'biogas_piscicultura', 'total_ch4_rsu_rpo'
+                'biogas_cana_nm_ano', 'biogas_soja_nm_ano', 'biogas_milho_nm_ano', 'biogas_bovinos_nm_ano',
+                'biogas_cafe_nm_ano', 'biogas_citros_nm_ano', 'biogas_suino_nm_ano', 'biogas_aves_nm_ano',
+                'biogas_piscicultura_nm_ano', 'rsu_potencial_nm_habitante_ano', 'rpo_potencial_nm_habitante_ano'
             ]
             
             for col in biogas_columns:
@@ -156,8 +156,8 @@ class CP2BDashboard:
             
             if min_total > 0 or max_total < float('inf'):
                 filtered_df = filtered_df[
-                    (filtered_df["total_final"] >= min_total) & 
-                    (filtered_df["total_final"] <= max_total)
+                    (filtered_df["total_final_nm_ano"] >= min_total) & 
+                    (filtered_df["total_final_nm_ano"] <= max_total)
                 ]
                 logger.info(f"Filtro potencial: {len(filtered_df)} municípios na faixa {min_total}-{max_total}")
             
@@ -166,7 +166,7 @@ class CP2BDashboard:
                 calculation_mode = filters.get("calculation_mode", "Fontes Selecionadas")
                 
                 if calculation_mode == "Fontes Selecionadas":
-                    filtered_df["total_final"] = filtered_df.apply(
+                    filtered_df["total_final_nm_ano"] = filtered_df.apply(
                         lambda row: recompute_total_by_sources(row, filters["sources"]), 
                         axis=1
                     )
@@ -174,7 +174,7 @@ class CP2BDashboard:
                 # Senão, mantém valores originais do banco
             
             # Aplicar ordenação
-            sort_by = filters.get("sort_by", "total_final")
+            sort_by = filters.get("sort_by", "total_final_nm_ano")
             sort_ascending = filters.get("sort_ascending", False)
             
             if sort_by in filtered_df.columns:
@@ -192,20 +192,20 @@ class CP2BDashboard:
             if viz_mode.get('mode') == "Por Categoria":
                 category = viz_mode.get('category')
                 if category == "Agrícola":
-                    filtered_df['display_value'] = filtered_df.get('total_agricola', 0)
+                    filtered_df['display_value'] = filtered_df.get('total_agricola_nm_ano', 0)
                 elif category == "Pecuária":
-                    filtered_df['display_value'] = filtered_df.get('total_pecuaria', 0)
+                    filtered_df['display_value'] = filtered_df.get('total_pecuaria_nm_ano', 0)
                 elif category == "Urbano":
                     filtered_df['display_value'] = filtered_df.get('total_ch4_rsu_rpo', 0)
                 else:
-                    filtered_df['display_value'] = filtered_df['total_final']
+                    filtered_df['display_value'] = filtered_df['total_final_nm_ano']
             
             elif viz_mode.get('mode') == "Por Fonte Específica":
                 source = viz_mode.get('source')
                 if source and source in filtered_df.columns:
                     filtered_df['display_value'] = filtered_df[source]
                 else:
-                    filtered_df['display_value'] = filtered_df['total_final']
+                    filtered_df['display_value'] = filtered_df['total_final_nm_ano']
             
             else:  # Total Geral
                 filtered_df['display_value'] = filtered_df['total_final']
@@ -249,7 +249,7 @@ class CP2BDashboard:
         
         # Estatísticas básicas
         total_municipios = len(df)
-        with_potential = len(df[df['total_final'] > 0])
+        with_potential = len(df[df['total_final_nm_ano'] > 0])
         without_potential = total_municipios - with_potential
         
         col1, col2, col3, col4 = st.columns(4)
@@ -270,7 +270,7 @@ class CP2BDashboard:
                 )
         
         with col2:
-            total_potential = df['total_final'].sum() if not df.empty else 0
+            total_potential = df['total_final_nm_ano'].sum() if not df.empty else 0
             st.metric(
                 "Potencial Total",
                 value=f"{total_potential:,.0f} Nm³/ano",
@@ -280,7 +280,7 @@ class CP2BDashboard:
         with col3:
             if with_potential > 0:
                 # Média apenas dos que têm potencial
-                avg_potential = df[df['total_final'] > 0]['total_final'].mean()
+                avg_potential = df[df['total_final_nm_ano'] > 0]['total_final_nm_ano'].mean()
                 st.metric(
                     "Média (com potencial)",
                     value=f"{avg_potential:,.0f} Nm³/ano",
@@ -290,10 +290,10 @@ class CP2BDashboard:
                 st.metric("Média", value="0 Nm³/ano")
         
         with col4:
-            max_potential = df['total_final'].max() if not df.empty else 0
+            max_potential = df['total_final_nm_ano'].max() if not df.empty else 0
             max_city = ""
             if not df.empty and max_potential > 0:
-                max_city = df.loc[df['total_final'].idxmax(), 'nm_mun']
+                max_city = df.loc[df['total_final_nm_ano'].idxmax(), 'nm_mun']
             
             st.metric(
                 "Maior Potencial",
@@ -422,8 +422,8 @@ class CP2BDashboard:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     if st.session_state.get('show_debug', False):
-                        with_potential_count = len(filtered_df[filtered_df['total_final'] > 0])
-                        zero_potential_count = len(filtered_df[filtered_df['total_final'] == 0])
+                        with_potential_count = len(filtered_df[filtered_df['total_final_nm_ano'] > 0])
+                        zero_potential_count = len(filtered_df[filtered_df['total_final_nm_ano'] == 0])
                         
                         st.info(
                             f"📊 Dados do mapa: {len(filtered_df)} municípios total | "
@@ -444,7 +444,7 @@ class CP2BDashboard:
                         map_data = filtered_df
                     else:
                         # Apenas com potencial > 0
-                        map_data = filtered_df[filtered_df['total_final'] > 0]
+                        map_data = filtered_df[filtered_df['total_final_nm_ano'] > 0]
                         if len(map_data) == 0:
                             if st.session_state.get('show_debug', False):
                                 st.warning("Nenhum município com potencial > 0 para exibir no mapa")
@@ -478,7 +478,7 @@ class CP2BDashboard:
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        original_total = filtered_df['total_final'].sum()
+                        original_total = filtered_df['total_final_nm_ano'].sum()
                         st.metric(
                             "Potencial Original",
                             f"{original_total:,.0f} Nm³/ano",
@@ -507,14 +507,14 @@ class CP2BDashboard:
                     
                     # Top municípios mais impactados
                     if 'total_final_scenario' in scenario_df.columns:
-                        scenario_df['scenario_impact'] = scenario_df['total_final_scenario'] - scenario_df['total_final']
-                        scenario_df['scenario_impact_percent'] = (scenario_df['scenario_impact'] / scenario_df['total_final'] * 100).fillna(0)
+                        scenario_df['scenario_impact'] = scenario_df['total_final_scenario'] - scenario_df['total_final_nm_ano']
+                        scenario_df['scenario_impact_percent'] = (scenario_df['scenario_impact'] / scenario_df['total_final_nm_ano'] * 100).fillna(0)
                         
                         st.markdown("### 🚀 Municípios com Maior Impacto")
                         
                         # Top 10 com maior impacto absoluto
                         top_impact = scenario_df.nlargest(10, 'scenario_impact')[
-                            ['nm_mun', 'total_final', 'total_final_scenario', 'scenario_impact', 'scenario_impact_percent']
+                            ['nm_mun', 'total_final_nm_ano', 'total_final_scenario', 'scenario_impact', 'scenario_impact_percent']
                         ].copy()
                         
                         top_impact.columns = ['Município', 'Original (Nm³/ano)', 'Cenário (Nm³/ano)', 'Diferença (Nm³/ano)', 'Impacto (%)']
@@ -536,7 +536,7 @@ class CP2BDashboard:
                 st.subheader("Análise dos Principais Municípios")
                 
                 # Só mostrar gráfico se houver dados com potencial
-                chart_data = filtered_df[filtered_df['total_final'] > 0]
+                chart_data = filtered_df[filtered_df['total_final_nm_ano'] > 0]
                 if not chart_data.empty:
                     top_municipios_bar(chart_data)
                 else:
@@ -545,7 +545,7 @@ class CP2BDashboard:
             
             with tab5:
                 st.subheader("Tabela Completa dos Municípios")
-                columns = ['nm_mun', 'cd_mun', 'total_final', 'total_agricola', 'total_pecuaria', 'area_km2']
+                columns = ['nm_mun', 'cd_mun', 'total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano', 'area_km2']
                 available_columns = [col for col in columns if col in filtered_df.columns]
                 render_table(filtered_df[available_columns])
             
@@ -562,9 +562,9 @@ class CP2BDashboard:
                     
                     with col2:
                         st.write("**Estatísticas:**")
-                        st.write(f"Com potencial: {len(filtered_df[filtered_df['total_final'] > 0])}")
-                        st.write(f"Potencial zero: {len(filtered_df[filtered_df['total_final'] == 0])}")
-                        st.write(f"Range: {filtered_df['total_final'].min():.0f} - {filtered_df['total_final'].max():.0f}")
+                        st.write(f"Com potencial: {len(filtered_df[filtered_df['total_final_nm_ano'] > 0])}")
+                        st.write(f"Potencial zero: {len(filtered_df[filtered_df['total_final_nm_ano'] == 0])}")
+                        st.write(f"Range: {filtered_df['total_final_nm_ano'].min():.0f} - {filtered_df['total_final_nm_ano'].max():.0f}")
                     
                     st.subheader("Amostra dos Dados")
                     st.dataframe(filtered_df.head(10))

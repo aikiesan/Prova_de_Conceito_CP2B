@@ -141,13 +141,13 @@ class MunicipalQueries:
         sql = """
         SELECT 
             cd_mun, nm_mun, area_km2, objectid,
-            total_final, total_agricola, total_pecuaria,
-            biogas_cana, biogas_soja, biogas_milho, biogas_bovino,
-            biogas_cafe, biogas_citros, biogas_suinos, biogas_aves,
-            biogas_piscicultura, biogas_silvicultura,
-            total_ch4_rsu_rpo
+            total_final_nm_ano, total_agricola_nm_ano, total_pecuaria_nm_ano,
+            biogas_cana_nm_ano, biogas_soja_nm_ano, biogas_milho_nm_ano, biogas_bovinos_nm_ano,
+            biogas_cafe_nm_ano, biogas_citros_nm_ano, biogas_suino_nm_ano, biogas_aves_nm_ano,
+            biogas_piscicultura_nm_ano, silvicultura_nm_ano,
+            rsu_potencial_nm_habitante_ano, rpo_potencial_nm_habitante_ano
         FROM municipios 
-        ORDER BY total_final DESC
+        ORDER BY total_final_nm_ano DESC
         """
         if limit:
             sql += f" LIMIT {limit}"
@@ -160,14 +160,14 @@ class MunicipalQueries:
         sql = """
         SELECT 
             cd_mun, nm_mun, area_km2, objectid,
-            total_final, total_agricola, total_pecuaria,
-            biogas_cana, biogas_soja, biogas_milho, biogas_bovino,
-            biogas_cafe, biogas_citros, biogas_suinos, biogas_aves,
-            biogas_piscicultura, biogas_silvicultura,
-            total_ch4_rsu_rpo
+            total_final_nm_ano, total_agricola_nm_ano, total_pecuaria_nm_ano,
+            biogas_cana_nm_ano, biogas_soja_nm_ano, biogas_milho_nm_ano, biogas_bovinos_nm_ano,
+            biogas_cafe_nm_ano, biogas_citros_nm_ano, biogas_suino_nm_ano, biogas_aves_nm_ano,
+            biogas_piscicultura_nm_ano, silvicultura_nm_ano,
+            rsu_potencial_nm_habitante_ano, rpo_potencial_nm_habitante_ano
         FROM municipios 
-        WHERE total_final > 0
-        ORDER BY total_final DESC
+        WHERE total_final_nm_ano > 0
+        ORDER BY total_final_nm_ano DESC
         """
         return query_df(sql)
     
@@ -184,13 +184,13 @@ class MunicipalQueries:
         sql = """
         SELECT 
             COUNT(*) as total_municipalities,
-            COUNT(CASE WHEN total_final > 0 THEN 1 END) as municipalities_with_potential,
-            SUM(total_final) as total_biogas_potential,
-            AVG(total_final) as avg_biogas_potential,
-            MAX(total_final) as max_biogas_potential,
-            MIN(total_final) as min_biogas_potential,
-            SUM(total_agricola) as total_agricultural,
-            SUM(total_pecuaria) as total_livestock,
+            COUNT(CASE WHEN total_final_nm_ano > 0 THEN 1 END) as municipalities_with_potential,
+            SUM(total_final_nm_ano) as total_biogas_potential,
+            AVG(total_final_nm_ano) as avg_biogas_potential,
+            MAX(total_final_nm_ano) as max_biogas_potential,
+            MIN(total_final_nm_ano) as min_biogas_potential,
+            SUM(total_agricola_nm_ano) as total_agricultural,
+            SUM(total_pecuaria_nm_ano) as total_livestock,
             SUM(area_km2) as total_area
         FROM municipios
         """

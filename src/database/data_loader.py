@@ -6,7 +6,7 @@ from .models import bulk_insert_municipios
 ROOT = Path(__file__).resolve().parents[2]
 RAW_XLSX = ROOT / "data" / "raw" / "Banco_De_Dados_Residuos_Biogas_Municipios_SP.xlsx"
 
-# Mapeamento COMPLETO das colunas Excel → Schema SQLite
+# Mapeamento das colunas Excel → Schema SQLite (Nova estrutura simplificada)
 COLUMN_MAP = {
     # Identificação
     "OBJECTID": "objectid",
@@ -14,60 +14,30 @@ COLUMN_MAP = {
     "NM_MUN": "nm_mun",
     "AREA_KM2": "area_km2",
     
-    # Culturas (toneladas/ano)
-    "Arroz (em casca)": "arroz_casca",
-    "Café (em grão) Total": "cafe_grao", 
-    "Canadeaçúcar": "cana_acucar",
-    "Laranja": "laranja",
-    "Limão": "limao",
-    "Milho (em grão)": "milho_grao",
-    "Soja (em grão)": "soja_grao",
-    "Sorgo (em grão)": "sorgo_grao",
+    # Biogás por fonte pecuária (Nm³/ano)
+    "Biogas_Bovinos_Nm_ano": "biogas_bovinos_nm_ano",
+    "Biogas_Suino_Nm_ano": "biogas_suino_nm_ano",
+    "Biogás Aves_Nm_ano": "biogas_aves_nm_ano",
+    "Biogas_Piscicultura_Nm_ano": "biogas_piscicultura_nm_ano",
+    "Total Pecuaria_Nm_ano": "total_pecuaria_nm_ano",
     
-    # Resíduos (toneladas/ano)
-    "Resíduos Cana (ton/ano)": "residuos_cana",
-    "Resíduos Soja (ton/ano)": "residuos_soja", 
-    "Resíduos Milho (ton/ano)": "residuos_milho",
-    "Resíduos Bovino (ton/ano)": "residuos_bovino",
+    # Silvicultura (Nm³/ano)
+    "Silvicultura_Nm_ano": "silvicultura_nm_ano",
     
-    # Rebanhos (cabeças)
-    "Bubalino": "bubalino",
-    "Equino": "equino",
-    "Suíno - total": "suino_total",
-    "Suíno - matrizes de suínos": "suino_matrizes",
-    "Caprino": "caprino", 
-    "Ovino": "ovino",
-    "Galináceos - total": "galinaceos_total",
-    "Galináceos - galinhas": "galinaceos_galinhas",
-    "Codornas": "codornas",
+    # RSU e RPO por habitante (Nm³/habitante/ano)
+    "RSU_Potencial_Nm_habitante_ano": "rsu_potencial_nm_habitante_ano",
+    "RPO_Potencial_Nm_habitante_ano": "rpo_potencial_nm_habitante_ano",
     
-    # Silvicultura
-    "Eucalipto Total (m³)": "eucalipto_total",
-    "Pinus Total (m³)": "pinus_total", 
-    "Biogás Silvicultura (Nm³/Ano)": "biogas_silvicultura",
+    # Biogás agrícola (Nm³/ano)
+    "Biogas_Cana_Nm_ano": "biogas_cana_nm_ano",
+    "Biogas_Soja_Nm_ano": "biogas_soja_nm_ano",
+    "Biogas_Milho_Nm_ano": "biogas_milho_nm_ano",
+    "Biogas_Cafe_Nm_ano": "biogas_cafe_nm_ano",
+    "Biogas_Citros_Nm_ano": "biogas_citros_nm_ano",
+    "Total Agrícola_Nm_ano": "total_agricola_nm_ano",
     
-    # RSU e RPO
-    "RSU Orgânicos (ton/ano)": "rsu_organicos",
-    "RPO Podas (ton/ano)": "rpo_podas",
-    "RSU Potencial CH4 (m³/ano)": "rsu_potencial_ch4",
-    "RPO Potencial CH4 (m³/ano)": "rpo_potencial_ch4", 
-    "Total CH4 RSU+RPO (m³/ano)": "total_ch4_rsu_rpo",
-    
-    # Biogás por fonte (Nm³/ano)
-    "Biogás Cana (Nm³/ano)": "biogas_cana",
-    "Biogás Soja (Nm³/ano)": "biogas_soja",
-    "Biogás Milho (Nm³/ano)": "biogas_milho", 
-    "Biogás Bovino (Nm³/ano)": "biogas_bovino",
-    "Biogás Café (Nm³/ano)": "biogas_cafe",
-    "Biogás Citros (Nm³/ano)": "biogas_citros",
-    "Biogás Suínos (Nm³/ano)": "biogas_suinos",
-    "Biogás Aves (Nm³/ano)": "biogas_aves",
-    "Biogás Piscicultura (Nm³/ano)": "biogas_piscicultura",
-    
-    # Totais finais
-    "Total Agrícola (Nm³/ano)": "total_agricola",
-    "Total Pecuária (Nm³/ano)": "total_pecuaria", 
-    "TOTAL FINAL (Nm³/ano)": "total_final"
+    # Total final
+    "TOTAL FINAL_Nm_ano": "total_final_nm_ano"
 }
 
 def clean_numeric_value(value):
@@ -122,44 +92,18 @@ def load_excel_to_sqlite() -> None:
     df["objectid"] = df.get("objectid", 0).apply(clean_integer_value)
     df["area_km2"] = df.get("area_km2", 0).apply(clean_numeric_value)
     
-    # Culturas (float)
-    cultura_cols = ["arroz_casca", "cafe_grao", "cana_acucar", "laranja", "limao", 
-                   "milho_grao", "soja_grao", "sorgo_grao"]
-    for col in cultura_cols:
-        df[col] = df.get(col, 0).apply(clean_numeric_value)
+    # Todas as colunas de biogás são valores numéricos (float)
+    biogas_cols = [
+        "biogas_bovinos_nm_ano", "biogas_suino_nm_ano", "biogas_aves_nm_ano", 
+        "biogas_piscicultura_nm_ano", "total_pecuaria_nm_ano",
+        "silvicultura_nm_ano",
+        "rsu_potencial_nm_habitante_ano", "rpo_potencial_nm_habitante_ano",
+        "biogas_cana_nm_ano", "biogas_soja_nm_ano", "biogas_milho_nm_ano", 
+        "biogas_cafe_nm_ano", "biogas_citros_nm_ano", "total_agricola_nm_ano",
+        "total_final_nm_ano"
+    ]
     
-    # Resíduos (float) 
-    residuo_cols = ["residuos_cana", "residuos_soja", "residuos_milho", "residuos_bovino"]
-    for col in residuo_cols:
-        df[col] = df.get(col, 0).apply(clean_numeric_value)
-    
-    # Rebanhos (integer)
-    rebanho_cols = ["bubalino", "equino", "suino_total", "suino_matrizes", 
-                   "caprino", "ovino", "galinaceos_total", "galinaceos_galinhas", "codornas"]
-    for col in rebanho_cols:
-        df[col] = df.get(col, 0).apply(clean_integer_value)
-    
-    # Silvicultura (float)
-    silv_cols = ["eucalipto_total", "pinus_total", "biogas_silvicultura"]
-    for col in silv_cols:
-        df[col] = df.get(col, 0).apply(clean_numeric_value)
-    
-    # RSU/RPO (float)
-    rsu_cols = ["rsu_organicos", "rpo_podas", "rsu_potencial_ch4", 
-               "rpo_potencial_ch4", "total_ch4_rsu_rpo"]
-    for col in rsu_cols:
-        df[col] = df.get(col, 0).apply(clean_numeric_value)
-    
-    # Biogás por fonte (float)
-    biogas_cols = ["biogas_cana", "biogas_soja", "biogas_milho", "biogas_bovino",
-                  "biogas_cafe", "biogas_citros", "biogas_suinos", "biogas_aves", 
-                  "biogas_piscicultura"]
     for col in biogas_cols:
-        df[col] = df.get(col, 0).apply(clean_numeric_value)
-    
-    # Totais (float)
-    total_cols = ["total_agricola", "total_pecuaria", "total_final"]
-    for col in total_cols:
         df[col] = df.get(col, 0).apply(clean_numeric_value)
     
     # Converter para dicionários
