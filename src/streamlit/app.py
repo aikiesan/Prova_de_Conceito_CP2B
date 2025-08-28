@@ -263,43 +263,39 @@ class CP2BDashboard:
         
         with col1:
             if show_all_mode:
-                delta_text = f"{with_potential} com potencial • {without_potential} zero"
-                create_metric_card(
-                    "🏛️", 
-                    f"{total_municipios:,}", 
-                    "Total de Municípios",
-                    delta_text
+                st.metric(
+                    "🏛️ Total de Municípios",
+                    f"{total_municipios:,}",
+                    delta=f"{with_potential} com potencial",
+                    help=f"Total: {total_municipios} | Com potencial: {with_potential} | Zero: {without_potential}"
                 )
             else:
-                create_metric_card(
-                    "🏛️", 
-                    f"{total_municipios:,}", 
-                    "Municípios com Potencial",
-                    "Filtrados > 0"
+                st.metric(
+                    "🏛️ Municípios com Potencial",
+                    f"{total_municipios:,}",
+                    help="Apenas municípios com potencial > 0"
                 )
         
         with col2:
             # Converter para milhões para melhor visualização
             potential_millions = total_potential / 1_000_000
-            create_metric_card(
-                "⚡", 
-                f"{potential_millions:.1f}M", 
-                "Potencial Total",
-                "Nm³/ano"
+            st.metric(
+                "⚡ Potencial Total",
+                f"{potential_millions:.1f}M Nm³/ano",
+                help="Potencial total de biogás de todos os municípios"
             )
         
         with col3:
             if with_potential > 0:
                 avg_potential = df[df['total_final_nm_ano'] > 0]['total_final_nm_ano'].mean()
                 avg_thousands = avg_potential / 1_000
-                create_metric_card(
-                    "📊", 
-                    f"{avg_thousands:.0f}k", 
-                    "Média Municipal",
-                    f"De {with_potential} municípios"
+                st.metric(
+                    "📊 Média Municipal",
+                    f"{avg_thousands:.0f}k Nm³/ano",
+                    help=f"Média de {with_potential} municípios com potencial"
                 )
             else:
-                create_metric_card("📊", "0", "Média Municipal", "Sem dados")
+                st.metric("📊 Média Municipal", "0 Nm³/ano", help="Sem dados")
         
         with col4:
             max_potential = df['total_final_nm_ano'].max() if not df.empty else 0
@@ -307,14 +303,13 @@ class CP2BDashboard:
             if not df.empty and max_potential > 0:
                 max_city = df.loc[df['total_final_nm_ano'].idxmax(), 'nm_mun']
                 max_millions = max_potential / 1_000_000
-                create_metric_card(
-                    "🥇", 
-                    f"{max_millions:.1f}M", 
-                    "Maior Potencial",
-                    max_city[:15] + ("..." if len(max_city) > 15 else "")
+                st.metric(
+                    "🥇 Maior Potencial",
+                    f"{max_millions:.1f}M Nm³/ano",
+                    help=f"Município: {max_city}"
                 )
             else:
-                create_metric_card("🥇", "0", "Maior Potencial", "Sem dados")
+                st.metric("🥇 Maior Potencial", "0 Nm³/ano", help="Sem dados")
     
     def render_error_handling(self) -> bool:
         """Interface de tratamento de erros"""
@@ -359,10 +354,10 @@ class CP2BDashboard:
                 
                 st.stop()
             
-            # Aplicar estilos
+            # Aplicar CSS limpo
             inject_global_css()
             
-            # Cabeçalho moderno com gradiente
+            # Cabeçalho principal
             create_gradient_header(
                 "CP2B - Sistema de Análise Geoespacial para Biogás", 
                 "Plataforma inteligente para análise do potencial de biogás em São Paulo",
