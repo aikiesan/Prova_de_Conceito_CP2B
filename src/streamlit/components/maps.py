@@ -105,165 +105,58 @@ def load_additional_shapefiles():
     return loaded
 
 def create_detailed_popup(row: pd.Series, potencial: float, filters: Dict = None) -> str:
-    """Cria popup detalhado baseado no modo de visualização"""
+    """Cria popup detalhado com TODOS os resíduos disponíveis no município"""
     
-    # Definir título baseado no modo
-    if filters and filters.get('visualization'):
-        viz_mode = filters['visualization']
-        mode = viz_mode.get('mode', 'Total Geral')
-        
-        if mode == "Por Fonte Específica":
-            source_names = {
-                'biogas_cana_nm_ano': '🌾 Cana-de-açúcar',
-                'biogas_soja_nm_ano': '🌱 Soja', 
-                'biogas_milho_nm_ano': '🌽 Milho',
-                'biogas_bovinos_nm_ano': '🐄 Bovinos',
-                'biogas_cafe_nm_ano': '☕ Café',
-                'biogas_citros_nm_ano': '🍊 Citros',
-                'biogas_suino_nm_ano': '🐷 Suínos',
-                'biogas_aves_nm_ano': '🐔 Aves',
-                'biogas_piscicultura_nm_ano': '🐟 Piscicultura',
-                'rsu_potencial_nm_habitante_ano': '🗑️ RSU',
-                'rpo_potencial_nm_habitante_ano': '🌿 RPO'
-            }
-            source = viz_mode.get('source', '')
-            title_detail = source_names.get(source, 'Fonte Específica')
-        elif mode == "Por Categoria":
-            category_names = {
-                'Agrícola': '🌾 Setor Agrícola',
-                'Pecuária': '🐄 Setor Pecuário', 
-                'Urbano': '🏙️ Setor Urbano'
-            }
-            category = viz_mode.get('category', '')
-            title_detail = category_names.get(category, 'Categoria')
-        else:
-            title_detail = '⚡ Potencial Total'
-    else:
-        title_detail = '⚡ Potencial Total'
+    municipio_nome = str(row['nm_mun']).replace("'", "").replace('"', '')
+    codigo_mun = str(row["cd_mun"])
     
-    # Cores por categoria
-    category_colors = {
-        'Agrícola': '#48bb78',
-        'Pecuária': '#ed8936', 
-        'Urbano': '#4299e1',
-        'Total': '#667eea'
+    # Dados básicos
+    agricola = row.get("total_agricola_nm_ano", 0)
+    pecuaria = row.get("total_pecuaria_nm_ano", 0)
+    total = row.get("total_final_nm_ano", 0)
+    area = row.get("area_km2", 0)
+    
+    # TODOS os resíduos organizados por categoria
+    all_residues_data = {
+        '🌾 AGRÍCOLA': {
+            'Cana-de-açúcar': row.get('biogas_cana_nm_ano', 0),
+            'Soja': row.get('biogas_soja_nm_ano', 0),
+            'Milho': row.get('biogas_milho_nm_ano', 0),
+            'Café': row.get('biogas_cafe_nm_ano', 0),
+            'Citros': row.get('biogas_citros_nm_ano', 0),
+        },
+        '🐄 PECUÁRIA': {
+            'Bovinos': row.get('biogas_bovinos_nm_ano', 0),
+            'Suínos': row.get('biogas_suino_nm_ano', 0),
+            'Aves': row.get('biogas_aves_nm_ano', 0),
+            'Piscicultura': row.get('biogas_piscicultura_nm_ano', 0),
+        },
+        '🏙️ URBANO': {
+            'RSU': row.get('rsu_potencial_nm_habitante_ano', 0),
+            'RPO': row.get('rpo_potencial_nm_habitante_ano', 0),
+        }
     }
     
-    # Seção de detalhamento por resíduos específicos
-    residue_details = ""
-    if filters and filters.get('visualization', {}).get('mode') == "Por Fonte Específica":
-        source = filters['visualization'].get('source', '')
-        if source in row.index:
-            residue_details = f"""
-            <div style='background: #f0f9ff; padding: 8px; border-radius: 6px; border-left: 3px solid #0ea5e9; margin: 8px 0;'>
-                <strong style='color: #0ea5e9; font-size: 11px;'>🔍 DETALHAMENTO DA FONTE</strong><br>
-                <span style='font-size: 13px; font-weight: 600; color: #1e40af;'>
-                    {row.get(source, 0):,.0f} Nm³/ano
-                </span>
-                <div style='font-size: 10px; color: #64748b; margin-top: 2px;'>
-                    {(row.get(source, 0) / row['total_final_nm_ano'] * 100 if row['total_final_nm_ano'] > 0 else 0):,.1f}% do potencial municipal
-                </div>
-            </div>
-            """
+    # Início do HTML
+    popup_html = f"<div style='width: 320px; padding: 8px; font-family: Arial;'><h4 style='margin: 0 0 8px 0; color: #2c3e50;'>🏛️ {municipio_nome}</h4><div style='background: #f0f4ff; padding: 6px; border-radius: 4px; margin-bottom: 8px;'><b>⚡ Potencial: {potencial:,.0f} Nm³/ano</b></div><div style='font-size: 11px; margin-bottom: 8px;'><div>🌾 Agrícola: {agricola:,.0f}</div><div>🐄 Pecuária: {pecuaria:,.0f}</div><div>📊 Total: {total:,.0f}</div><div>📍 Área: {area:,.1f} km²</div></div>"
     
-    # Grid com dados de resíduos individuais
-    agricultural_sources = f"""
-    <div style='background: #f0fdf4; padding: 6px; border-radius: 4px; margin: 4px 0;'>
-        <strong style='color: #16a34a; font-size: 10px;'>🌾 AGRÍCOLA</strong>
-        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9px; margin-top: 3px;'>
-            <div>Cana: {row.get('biogas_cana_nm_ano', 0):,.0f}</div>
-            <div>Soja: {row.get('biogas_soja_nm_ano', 0):,.0f}</div>
-            <div>Milho: {row.get('biogas_milho_nm_ano', 0):,.0f}</div>
-            <div>Café: {row.get('biogas_cafe_nm_ano', 0):,.0f}</div>
-            <div>Citros: {row.get('biogas_citros_nm_ano', 0):,.0f}</div>
-        </div>
-    </div>
-    """
+    # Adicionar seções detalhadas por categoria
+    popup_html += "<div style='font-size: 10px; border-top: 1px solid #ddd; padding-top: 6px;'><b>📋 Todos os Resíduos:</b>"
     
-    livestock_sources = f"""
-    <div style='background: #fef7ed; padding: 6px; border-radius: 4px; margin: 4px 0;'>
-        <strong style='color: #ea580c; font-size: 10px;'>🐄 PECUÁRIA</strong>
-        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9px; margin-top: 3px;'>
-            <div>Bovinos: {row.get('biogas_bovinos_nm_ano', 0):,.0f}</div>
-            <div>Suínos: {row.get('biogas_suino_nm_ano', 0):,.0f}</div>
-            <div>Aves: {row.get('biogas_aves_nm_ano', 0):,.0f}</div>
-            <div>Piscicultura: {row.get('biogas_piscicultura_nm_ano', 0):,.0f}</div>
-        </div>
-    </div>
-    """
-    
-    urban_sources = f"""
-    <div style='background: #eff6ff; padding: 6px; border-radius: 4px; margin: 4px 0;'>
-        <strong style='color: #2563eb; font-size: 10px;'>🏙️ URBANO</strong>
-        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9px; margin-top: 3px;'>
-            <div>RSU: {row.get('rsu_potencial_nm_habitante_ano', 0):,.0f}</div>
-            <div>RPO: {row.get('rpo_potencial_nm_habitante_ano', 0):,.0f}</div>
-        </div>
-    </div>
-    """
-    
-    popup_html = f"""
-    <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-                width: 320px; padding: 12px; border-radius: 8px; background: #fff;'>
-        <div style='border-bottom: 3px solid #667eea; padding-bottom: 8px; margin-bottom: 12px;'>
-            <h4 style='margin: 0; color: #2c3e50; font-size: 18px; font-weight: 600;'>
-                🏛️ {row['nm_mun']}
-            </h4>
-            <div style='font-size: 11px; color: #6b7280;'>
-                {title_detail}
-            </div>
-        </div>
+    for category, residues in all_residues_data.items():
+        category_total = sum(residues.values())
         
-        <div style='display: grid; gap: 8px;'>
-            <div style='background: linear-gradient(135deg, #667eea20, #764ba220); 
-                        padding: 8px; border-radius: 6px; border-left: 3px solid #667eea;'>
-                <strong style='color: #667eea; font-size: 12px;'>⚡ POTENCIAL EXIBIDO</strong><br>
-                <span style='font-size: 16px; font-weight: 700; color: #2c3e50;'>
-                    {potencial:,.0f}
-                </span> <span style='color: #6b7280; font-size: 12px;'>Nm³/ano</span>
-            </div>
+        if category_total > 0:
+            popup_html += f"<div style='margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 3px;'><b>{category}</b> ({category_total:,.0f})"
             
-            {residue_details}
+            # Mostrar apenas resíduos com valor > 0
+            for residue_name, value in residues.items():
+                if value > 0:
+                    popup_html += f"<div style='margin-left: 8px; font-size: 9px;'>{residue_name}: {value:,.0f}</div>"
             
-            <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;'>
-                <div>
-                    <strong style='color: #48bb78;'>🌾 Agrícola:</strong><br>
-                    <span style='font-weight: 600;'>{row.get("total_agricola_nm_ano", 0):,.0f}</span>
-                </div>
-                <div>
-                    <strong style='color: #ed8936;'>🐄 Pecuária:</strong><br>
-                    <span style='font-weight: 600;'>{row.get("total_pecuaria_nm_ano", 0):,.0f}</span>
-                </div>
-                <div>
-                    <strong style='color: #4299e1;'>📊 Total:</strong><br>
-                    <span style='font-weight: 600;'>{row["total_final_nm_ano"]:,.0f}</span>
-                </div>
-                <div>
-                    <strong style='color: #9f7aea;'>📍 Área:</strong><br>
-                    <span style='font-weight: 600;'>{row.get("area_km2", 0):,.1f} km²</span>
-                </div>
-            </div>
-            
-            <!-- Expansão com detalhes por resíduo -->
-            <details style='margin-top: 8px;'>
-                <summary style='font-size: 11px; font-weight: 600; color: #374151; cursor: pointer; 
-                               padding: 4px; border-radius: 4px; background: #f9fafb;'>
-                    🔍 Ver detalhes por resíduo
-                </summary>
-                <div style='margin-top: 6px;'>
-                    {agricultural_sources}
-                    {livestock_sources}
-                    {urban_sources}
-                </div>
-            </details>
-            
-            <div style='text-align: center; margin-top: 8px; padding: 4px; 
-                        background: #f8f9fa; border-radius: 4px; font-size: 10px; color: #6b7280;'>
-                🔢 Código Municipal: <strong>{row["cd_mun"]}</strong>
-            </div>
-        </div>
-    </div>
-    """
+            popup_html += "</div>"
+    
+    popup_html += f"</div><div style='text-align: center; margin-top: 6px; font-size: 9px; color: #666;'>Código: {codigo_mun}</div></div>"
     
     return popup_html
 
@@ -405,7 +298,7 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
             folium.CircleMarker(
                 location=[row['lat'], row['lon']],
                 radius=radius,
-                popup=folium.Popup(popup_html, max_width=320),
+                popup=folium.Popup(popup_html, max_width=300),
                 tooltip=f"🏛️ {row['nm_mun']}: {potencial:,.0f} Nm³/ano",
                 color=stroke_color,
                 weight=stroke_weight,
@@ -425,6 +318,40 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     # Adicionar camadas adicionais se disponíveis
     if additional_layers and layer_controls:
         add_additional_layers_to_map(m, additional_layers, layer_controls)
+    
+    # Adicionar JavaScript para desabilitar auto-pan nos popups
+    disable_autopan_js = """
+    <script>
+    // Desabilitar auto-pan nos popups para evitar movimento do mapa
+    window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+            var mapElements = document.querySelectorAll('div[id*="folium-map"]');
+            mapElements.forEach(function(mapEl) {
+                if (mapEl._leaflet_map) {
+                    var map = mapEl._leaflet_map;
+                    
+                    // Override das configurações de popup
+                    map.options.closePopupOnClick = false;
+                    
+                    // Interceptar abertura de popups
+                    map.on('popupopen', function(e) {
+                        var popup = e.popup;
+                        if (popup) {
+                            // Desabilitar o auto-pan
+                            popup.options.autoPan = false;
+                            popup.options.keepInView = false;
+                        }
+                    });
+                }
+            });
+        }, 500);
+    });
+    </script>
+    """
+    
+    # Usar Element do folium em vez de Template
+    from folium import Element
+    m.get_root().html.add_child(Element(disable_autopan_js))
     
     return m
 
@@ -680,8 +607,68 @@ def add_additional_layers_to_map(folium_map: folium.Map, additional_layers: Dict
             collapsed=False
         ).add_to(folium_map)
 
+def render_layer_controls_below_map(municipios_data: pd.DataFrame) -> Dict[str, bool]:
+    """Renderiza controles de camadas adicionais ABAIXO do mapa"""
+    
+    # Estilo para a seção de controles
+    st.markdown("""
+    <style>
+    .map-controls-section {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    .control-section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #dee2e6;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="control-section-title">🗺️ Camadas Adicionais</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Selecione camadas:**")
+        layer_options = st.multiselect(
+            "Escolha as camadas para exibir:",
+            options=[
+                "🏭 Plantas de Biogás Existentes",
+                "🏛️ Regiões Administrativas", 
+                "🗺️ Limite de São Paulo",
+                "🌾 Áreas Agrícolas",
+            ],
+            default=[],
+            key="map_layer_selector_below_map"
+        )
+    
+    with col2:
+        st.markdown("**📊 Status:**")
+        display_count = len(municipios_data[municipios_data['display_value'] > 0]) if 'display_value' in municipios_data.columns else len(municipios_data)
+        st.info(f"🎯 **Exibindo:** {len(municipios_data)} municípios ({display_count} com potencial)")
+    
+    # Converter multiselect para o formato esperado
+    layer_mapping = {
+        "🏭 Plantas de Biogás Existentes": "plantas_biogas",
+        "🏛️ Regiões Administrativas": "regioes_admin",
+        "🗺️ Limite de São Paulo": "limite_sp",
+    }
+    
+    return {
+        'selected_layers': layer_options,
+        'layer_controls': {layer_mapping.get(layer, False): layer in layer_options for layer in layer_mapping}
+    }
+
+
 def render_layer_controls() -> Dict[str, bool]:
-    """Renderiza controles de camadas adicionais"""
+    """Renderiza controles de camadas adicionais (versão antiga - manter para compatibilidade)"""
     st.subheader("🗺️ Camadas Adicionais")
     
     col1, col2 = st.columns(2)
@@ -708,31 +695,8 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
     is_pre_filtered = filters and filters.get('pre_filtered', False)
     
     
-    # CONTROLES SIMPLIFICADOS - APENAS CAMADAS ADICIONAIS
-    controls_container = st.container()
-    with controls_container:
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.markdown("**🗺️ Camadas Adicionais:**")
-            layer_options = st.multiselect(
-                "Selecione camadas:",
-                options=[
-                    "🏭 Plantas de Biogás Existentes",
-                    "🏛️ Regiões Administrativas", 
-                    "🗺️ Limite de São Paulo",
-                    "🌾 Áreas Agrícolas",
-                ],
-                default=[],
-                key="map_layer_selector"
-            )
-        
-        with col2:
-            st.markdown("**📊 Status:**")
-            display_count = len(municipios_data[municipios_data['display_value'] > 0]) if 'display_value' in municipios_data.columns else len(municipios_data)
-            st.info(f"🎯 **Exibindo:** {len(municipios_data)} municípios ({display_count} com potencial)")
-        
-        st.markdown("---")
+    # Controles movidos para depois do mapa - apenas definir variáveis padrão
+    layer_options = []  # Será definido depois do mapa
     
     # Os dados já vêm pré-filtrados do dashboard, apenas usar diretamente
     # Carregar shapefile principal
@@ -891,20 +855,36 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
         )
         
         
-        # CONTAINER FIXO PARA O MAPA - EVITA MOVIMENTO NA PÁGINA
+        # CONTAINER DO MAPA COM AJUSTE DE ALTURA BASEADO NO MODO
+        fullscreen_mode = filters.get('fullscreen_mode', False)
+        map_height = 800 if fullscreen_mode else 600  # Altura maior em fullscreen
+        
         map_container = st.container()
         with map_container:
             # Key simples baseada no número de municípios filtrados
             import hashlib
             
             # Criar hash baseado nos dados filtrados
-            data_signature = f"{len(municipios_data)}_{len(layer_options)}"
+            data_signature = f"{len(municipios_data)}_{len(layer_options)}_{fullscreen_mode}"
             map_key = f"biogas_map_{hashlib.md5(data_signature.encode()).hexdigest()[:8]}"
+            
+            # CSS adicional para fullscreen
+            if fullscreen_mode:
+                st.markdown("""
+                <style>
+                div[data-testid="stApp"] > div:first-child {
+                    padding-top: 0rem;
+                }
+                .streamlit-folium {
+                    width: 100% !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
             
             map_data = st_folium(
                 biogas_map, 
                 width=None,
-                height=600,
+                height=map_height,
                 use_container_width=True,
                 returned_objects=["last_object_clicked"],
                 key=map_key  # Key única força regeneração total

@@ -24,7 +24,7 @@ try:
     from components.navigation import render_navigation_sidebar, get_page_config
     from components.minimal_filters import render_sidebar_filters, apply_residue_filters
     from components.filters import RESIDUE_TYPES, AGGREGATE_TYPES
-    from components.maps import render_map
+    from components.maps import render_map, render_layer_controls_below_map
     from components.charts import top_municipios_bar
     from components.tables import render_table
     from components.executive_dashboard import render_executive_dashboard
@@ -34,7 +34,7 @@ except ImportError:
     from src.streamlit.components.navigation import render_navigation_sidebar, get_page_config
     from src.streamlit.components.minimal_filters import render_sidebar_filters, apply_residue_filters
     from src.streamlit.components.filters import RESIDUE_TYPES, AGGREGATE_TYPES
-    from src.streamlit.components.maps import render_map
+    from src.streamlit.components.maps import render_map, render_layer_controls_below_map
     from src.streamlit.components.charts import top_municipios_bar
     from src.streamlit.components.tables import render_table
     from src.streamlit.components.executive_dashboard import render_executive_dashboard
@@ -50,7 +50,8 @@ try:
     )
     from utils.styling_simple import (
         inject_global_css, create_gradient_header, create_section_header, 
-        create_metric_card, create_theme_toggle
+        create_metric_card, create_theme_toggle, create_dashboard_header,
+        create_map_section
     )
 except ImportError:
     # Fallback for Streamlit Cloud
@@ -63,7 +64,8 @@ except ImportError:
     )
     from src.streamlit.utils.styling_simple import (
         inject_global_css, create_gradient_header, create_section_header, 
-        create_metric_card, create_theme_toggle
+        create_metric_card, create_theme_toggle, create_dashboard_header,
+        create_map_section
     )
 
 # Configuração de logging
@@ -80,11 +82,14 @@ class CP2BDashboard:
     
     def _configure_page(self) -> None:
         """Configurar página do Streamlit"""
+        # Configurar estado inicial da sidebar baseado no modo fullscreen
+        initial_sidebar_state = "collapsed" if st.session_state.get('fullscreen_mode', False) else "expanded"
+        
         st.set_page_config(
             page_title="CP2B - Sistema de Análise Geoespacial para Biogás",
             page_icon="🌱",
             layout="wide",
-            initial_sidebar_state="expanded"
+            initial_sidebar_state=initial_sidebar_state
         )
     
     def _initialize_session_state(self) -> None:
@@ -296,25 +301,47 @@ class CP2BDashboard:
         
         return show_all
     
-    def apply_dashboard_filters(self, df: pd.DataFrame, selected_residue: str, show_zero_values: bool, max_municipalities: int) -> pd.DataFrame:
-        """Aplica filtros do dashboard e retorna dados filtrados"""
+    def apply_dashboard_filters(self, df: pd.DataFrame, selected_residues: list, show_zero_values: bool, max_municipalities: int, selection_mode: str = "🎯 Individual") -> pd.DataFrame:
+        """Aplica filtros do dashboard com suporte a múltiplos resíduos"""
         
         filtered_df = df.copy()
         
-        # Preparar display_value baseado na seleção
-        if selected_residue == "urban_combined":
-            # Combinar RSU + RPO para resíduos urbanos
-            if 'rsu_potencial_nm_habitante_ano' in filtered_df.columns and 'rpo_potencial_nm_habitante_ano' in filtered_df.columns:
-                filtered_df['display_value'] = (
-                    filtered_df['rsu_potencial_nm_habitante_ano'].fillna(0) + 
-                    filtered_df['rpo_potencial_nm_habitante_ano'].fillna(0)
-                )
+        if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:
+            # Modo múltiplos resíduos - calcular somatória
+            filtered_df['display_value'] = 0.0
+            
+            # Somar cada resíduo selecionado
+            for residue_column in selected_residues:
+                if residue_column == "urban_combined":
+                    # Combinar RSU + RPO para resíduos urbanos
+                    if 'rsu_potencial_nm_habitante_ano' in filtered_df.columns and 'rpo_potencial_nm_habitante_ano' in filtered_df.columns:
+                        filtered_df['display_value'] += (
+                            filtered_df['rsu_potencial_nm_habitante_ano'].fillna(0) + 
+                            filtered_df['rpo_potencial_nm_habitante_ano'].fillna(0)
+                        )
+                elif residue_column in filtered_df.columns:
+                    filtered_df['display_value'] += filtered_df[residue_column].fillna(0)
+            
+            # Armazenar quais resíduos foram combinados para referência
+            filtered_df['combined_residues'] = str(selected_residues)
+            
+        else:
+            # Modo individual (comportamento original)
+            selected_residue = selected_residues[0] if selected_residues else "total_final_nm_ano"
+            
+            if selected_residue == "urban_combined":
+                # Combinar RSU + RPO para resíduos urbanos
+                if 'rsu_potencial_nm_habitante_ano' in filtered_df.columns and 'rpo_potencial_nm_habitante_ano' in filtered_df.columns:
+                    filtered_df['display_value'] = (
+                        filtered_df['rsu_potencial_nm_habitante_ano'].fillna(0) + 
+                        filtered_df['rpo_potencial_nm_habitante_ano'].fillna(0)
+                    )
+                else:
+                    filtered_df['display_value'] = filtered_df['total_final_nm_ano']
+            elif selected_residue in filtered_df.columns:
+                filtered_df['display_value'] = filtered_df[selected_residue]
             else:
                 filtered_df['display_value'] = filtered_df['total_final_nm_ano']
-        elif selected_residue in filtered_df.columns:
-            filtered_df['display_value'] = filtered_df[selected_residue]
-        else:
-            filtered_df['display_value'] = filtered_df['total_final_nm_ano']
         
         # Filtrar municípios com potencial zero se necessário
         if not show_zero_values:
@@ -325,6 +352,23 @@ class CP2BDashboard:
             filtered_df = filtered_df.nlargest(max_municipalities, 'display_value')
         
         return filtered_df
+    
+    def calculate_residue_breakdown(self, df: pd.DataFrame, selected_residues: list) -> dict:
+        """Calcula breakdown individual de cada resíduo selecionado"""
+        breakdown = {}
+        
+        for residue_column in selected_residues:
+            if residue_column == "urban_combined":
+                # Combinar RSU + RPO
+                if 'rsu_potencial_nm_habitante_ano' in df.columns and 'rpo_potencial_nm_habitante_ano' in df.columns:
+                    total = (df['rsu_potencial_nm_habitante_ano'].fillna(0) + df['rpo_potencial_nm_habitante_ano'].fillna(0)).sum()
+                    breakdown['Resíduos Urbanos'] = total
+                else:
+                    breakdown['Resíduos Urbanos'] = 0
+            elif residue_column in df.columns:
+                breakdown[residue_column] = df[residue_column].fillna(0).sum()
+        
+        return breakdown
     
     def render_summary_metrics(self, df: pd.DataFrame, show_all_mode: bool) -> None:
         """Renderiza cards de resumo"""
@@ -487,199 +531,260 @@ class CP2BDashboard:
     def render_dashboard_page(self, df: pd.DataFrame, page_config: dict) -> None:
         """Renders the main dashboard page with map as THE primary feature"""
         
-        # CONTROLES DE FILTRO INTEGRADOS NO DASHBOARD
-        st.markdown("## 🗺️ **Mapa Interativo de Biogás - São Paulo**")
+        # Opções de resíduos
+        residue_options = {
+            "⚡ Potencial Total": "total_final_nm_ano",
+            "🌾 Total Agrícola": "total_agricola_nm_ano",
+            "🐄 Total Pecuária": "total_pecuaria_nm_ano", 
+            "🗑️ Resíduos Urbanos": "urban_combined",
+            "🌾 Cana-de-açúcar": "biogas_cana_nm_ano",
+            "🌱 Soja": "biogas_soja_nm_ano",
+            "🌽 Milho": "biogas_milho_nm_ano",
+            "☕ Café": "biogas_cafe_nm_ano",
+            "🍊 Citros": "biogas_citros_nm_ano",
+            "🐄 Bovinos": "biogas_bovinos_nm_ano",
+            "🐷 Suínos": "biogas_suino_nm_ano",
+            "🐔 Aves": "biogas_aves_nm_ano",
+            "🐟 Piscicultura": "biogas_piscicultura_nm_ano",
+            "🗑️ RSU (Municipal)": "rsu_potencial_nm_habitante_ano",
+            "🍃 RPO (Jardim/Poda)": "rpo_potencial_nm_habitante_ano",
+            "🌲 Silvicultura": "silvicultura_nm_ano"
+        }
         
-        # Controles de visualização em colunas
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        # HEADER ORGANIZADO COM SELEÇÃO MÚLTIPLA E MODO FULLSCREEN
+        selected_residues, show_zero_values, max_municipalities, selection_mode, fullscreen_mode = create_dashboard_header(residue_options)
         
-        with col1:
-            st.markdown("**📊 Tipo de Resíduo:**")
-            residue_options = {
-                "⚡ Potencial Total": "total_final_nm_ano",
-                "🌾 Total Agrícola": "total_agricola_nm_ano",
-                "🐄 Total Pecuária": "total_pecuaria_nm_ano", 
-                "🗑️ Resíduos Urbanos": "urban_combined",
-                "🌾 Cana-de-açúcar": "biogas_cana_nm_ano",
-                "🌱 Soja": "biogas_soja_nm_ano",
-                "🌽 Milho": "biogas_milho_nm_ano",
-                "☕ Café": "biogas_cafe_nm_ano",
-                "🍊 Citros": "biogas_citros_nm_ano",
-                "🐄 Bovinos": "biogas_bovinos_nm_ano",
-                "🐷 Suínos": "biogas_suino_nm_ano",
-                "🐔 Aves": "biogas_aves_nm_ano",
-                "🐟 Piscicultura": "biogas_piscicultura_nm_ano",
-                "🗑️ RSU (Municipal)": "rsu_potencial_nm_habitante_ano",
-                "🍃 RPO (Jardim/Poda)": "rpo_potencial_nm_habitante_ano",
-                "🌲 Silvicultura": "silvicultura_nm_ano"
-            }
-            
-            selected_residue_label = st.selectbox(
-                "Selecione o tipo:",
-                options=list(residue_options.keys()),
-                index=0,  # Default to "Potencial Total"
-                key="dashboard_residue_selector"
-            )
-            
-            selected_residue = residue_options[selected_residue_label]
+        # APLICAR FILTROS COM SUPORTE A MÚLTIPLOS RESÍDUOS
+        filtered_df = self.apply_dashboard_filters(df, selected_residues, show_zero_values, max_municipalities, selection_mode)
         
-        with col2:
-            st.markdown("**⚙️ Opções de Exibição:**")
-            show_zero_values = st.checkbox(
-                "Mostrar potencial zero",
-                value=False,
-                key="dashboard_show_zeros"
-            )
-            
-        with col3:
-            st.markdown("**🎯 Limite de Municípios:**")
-            max_municipalities = st.slider(
-                "Máximo:",
-                min_value=25, max_value=645, value=200, step=25,
-                key="dashboard_max_municipalities"
-            )
-            
-        with col4:
-            st.markdown("**🔄**")
-            if st.button("Atualizar", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
+        # Atualizar contadores no session state para o header
+        if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:
+            # Para múltiplos resíduos, contar municípios que têm pelo menos um dos resíduos > 0
+            potential_count = len(filtered_df[filtered_df['display_value'] > 0])
+        else:
+            # Para seleção individual
+            selected_residue = selected_residues[0] if selected_residues else "total_final_nm_ano"
+            if selected_residue in df.columns:
+                potential_count = len(df[df[selected_residue] > 0])
+            elif selected_residue == "urban_combined":
+                potential_count = len(df[(df.get('rsu_potencial_nm_habitante_ano', 0) > 0) | (df.get('rpo_potencial_nm_habitante_ano', 0) > 0)])
+            else:
+                potential_count = len(df[df['total_final_nm_ano'] > 0])
         
-        # APLICAR FILTROS ANTES DE TUDO
-        filtered_df = self.apply_dashboard_filters(df, selected_residue, show_zero_values, max_municipalities)
-        
-        # Status do filtro
-        current_selection = selected_residue_label.replace("🌾", "").replace("🐄", "").replace("🗑️", "").replace("⚡", "").strip()
-        if selected_residue != "total_final_nm_ano":
-            potential_count = len(df[df[selected_residue] > 0]) if selected_residue in df.columns else 0
-            st.success(f"✅ **{current_selection}:** {potential_count} municípios com potencial → {len(filtered_df)} selecionados")
-        
-        st.markdown("---")
+        st.session_state.potential_count = potential_count
         
         # Update session state with count for sidebar display
         st.session_state.filtered_count = len(filtered_df)
         
         if filtered_df.empty:
-            st.warning("🔍 Nenhum dado encontrado.")
+            st.warning("🔍 Nenhum dado encontrado com os filtros aplicados.")
             return
         
-        # MAPA PRINCIPAL - AGORA RECEBE DADOS PRÉ-FILTRADOS
-        try:
-            # Usar altura máxima disponível e remover espaçamento desnecessário
+        # APLICAR CSS FULLSCREEN SE NECESSÁRIO
+        if fullscreen_mode:
             st.markdown("""
             <style>
             .main .block-container {
-                padding-top: 1rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
                 max-width: 100% !important;
+            }
+            .stSidebar {
+                display: none !important;
             }
             </style>
             """, unsafe_allow_html=True)
+        
+        # MAPA PRINCIPAL COM SEÇÃO ESTILIZADA
+        try:
+            # Título dinâmico baseado no modo de seleção
+            if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:
+                reverse_residue_options = {v: k for k, v in residue_options.items()}
+                residue_names = [reverse_residue_options.get(res, res).replace("⚡", "").replace("🌾", "").replace("🐄", "").replace("🗑️", "").replace("🐔", "").replace("🌱", "").replace("🌽", "").replace("☕", "").replace("🍊", "").replace("🐷", "").replace("🐟", "").replace("🌲", "").replace("🍃", "").strip() for res in selected_residues]
+                if len(residue_names) <= 3:
+                    map_title = f"🗺️ Combinação: {' + '.join(residue_names)}"
+                else:
+                    map_title = f"🗺️ Combinação: {' + '.join(residue_names[:2])} (+{len(residue_names)-2} mais)"
+            else:
+                # Modo individual
+                reverse_residue_options = {v: k for k, v in residue_options.items()}
+                residue_name = reverse_residue_options.get(selected_residues[0], selected_residues[0]).replace("⚡", "").replace("🌾", "").replace("🐄", "").replace("🗑️", "").replace("🐔", "").replace("🌱", "").replace("🌽", "").replace("☕", "").replace("🍊", "").replace("🐷", "").replace("🐟", "").replace("🌲", "").replace("🍃", "").strip()
+                map_title = f"🗺️ {residue_name}"
+            
+            # Adicionar indicador de modo fullscreen ao título
+            if fullscreen_mode:
+                map_title += " - 🖥️ Modo Tela Cheia"
+            
+            # Seção do mapa
+            if not fullscreen_mode:
+                create_map_section(map_title)
+            else:
+                # Em modo fullscreen, apenas título simples
+                st.markdown(f"## {map_title}")
+                st.markdown("---")
             
             render_map(
                 filtered_df,  # Dados já filtrados pelo dashboard
                 selected_municipios=st.session_state.get('selected_municipios', []),
-                filters={'pre_filtered': True}  # Indica que dados já vêm filtrados
+                filters={
+                    'pre_filtered': True,  # Indica que dados já vêm filtrados
+                    'selection_mode': selection_mode,
+                    'selected_residues': selected_residues,
+                    'combined_residues': selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1,
+                    'fullscreen_mode': fullscreen_mode  # Passar modo fullscreen para o mapa
+                }
             )
             
+            st.caption("💡 Clique nos pontos do mapa para mais informações sobre cada município")
+        
+            # CONTROLES CONDICIONAIS - OCULTAR EM FULLSCREEN PARA MAXIMIZAR MAPA
+            if not fullscreen_mode:
+                # CONTROLES DE CAMADAS ABAIXO DO MAPA
+                st.markdown("---")
+                
+                layer_controls_result = render_layer_controls_below_map(filtered_df)
+                
+                # Mostrar breakdown de múltiplos resíduos se aplicável
+                if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:
+                    st.markdown("### 📊 **Breakdown dos Resíduos Combinados**")
+                    
+                    breakdown = self.calculate_residue_breakdown(filtered_df, selected_residues)
+                    
+                    if breakdown:
+                        cols = st.columns(min(len(breakdown), 4))
+                        
+                        for idx, (residue_name, value) in enumerate(breakdown.items()):
+                            with cols[idx % 4]:
+                                # Limpar nome do resíduo
+                                clean_name = residue_name.replace('biogas_', '').replace('_nm_ano', '').replace('_', ' ').title()
+                                st.metric(
+                                    label=clean_name,
+                                    value=f"{value/1_000_000:.1f}M Nm³/ano",
+                                    help=f"Contribuição de {clean_name} para o total combinado"
+                                )
+                        
+                        # Mostrar total combinado
+                        total_combined = sum(breakdown.values())
+                        st.metric(
+                            label="🔄 **Total Combinado**",
+                            value=f"{total_combined/1_000_000:.1f}M Nm³/ano",
+                            delta=f"{len(selected_residues)} resíduos selecionados"
+                        )
+                    else:
+                        st.warning("Nenhum resíduo encontrado para os filtros aplicados")
+                    
+                    st.markdown("---")
+                
+                if layer_controls_result.get('selected_layers'):
+                    st.success(f"✅ Camadas ativadas: {', '.join(layer_controls_result['selected_layers'])}")
+                else:
+                    st.info("💡 Selecione camadas adicionais para enriquecer a visualização do mapa")
+            else:
+                # Apenas informações essenciais em fullscreen
+                if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:
+                    breakdown = self.calculate_residue_breakdown(filtered_df, selected_residues)
+                    if breakdown:
+                        total_combined = sum(breakdown.values())
+                        st.info(f"🔄 **Combinando {len(selected_residues)} resíduos** | Total: {total_combined/1_000_000:.1f}M Nm³/ano")
+                
+                st.info("🖥️ **Modo Tela Cheia Ativo** - Desmarque '🖥️ Mapa Grande' no header para ver controles adicionais")
+            
         except Exception as e:
-            st.error(f"❌ Erro no Mapa: {e}")
+            st.error(f"❌ Erro ao carregar o mapa: {e}")
             if st.session_state.get('show_debug', False):
                 st.exception(e)
         
-        # Métricas compactas baseadas nos DADOS FILTRADOS
-        st.markdown("---")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("📍 Municípios", len(filtered_df))
-        with col2:
-            # Usar display_value que representa o resíduo selecionado
-            if 'display_value' in filtered_df.columns:
-                total_potential = filtered_df['display_value'].sum()
-            else:
-                total_potential = filtered_df['total_final_nm_ano'].sum()
-            st.metric("⚡ Potencial Exibido", f"{total_potential/1_000_000:.1f}M Nm³/ano")
-        with col3:
-            # Maior potencial do resíduo selecionado
-            if 'display_value' in filtered_df.columns:
-                max_potential = filtered_df['display_value'].max()
-                if max_potential > 0:
-                    max_city = filtered_df.loc[filtered_df['display_value'].idxmax(), 'nm_mun']
-                    st.metric("🥇 Maior", f"{max_potential/1_000:.0f}k Nm³/ano", help=f"Município: {max_city}")
+        # Seções expansíveis organizadas - OCULTAR EM FULLSCREEN
+        if not fullscreen_mode:
+            st.markdown("---")
+            
+            col_exp1, col_exp2 = st.columns(2)
+            
+            with col_exp1:
+                with st.expander("🏆 **Top 10 Municípios**", expanded=False):
+                    if not filtered_df.empty:
+                        top_data = filtered_df.nlargest(10, 'total_final_nm_ano')
+                        
+                        for idx, (_, row) in enumerate(top_data.iterrows(), 1):
+                            col1, col2, col3 = st.columns([1, 4, 2])
+                            
+                            with col1:
+                                st.markdown(f"**#{idx}**")
+                            
+                            with col2:
+                                st.markdown(f"**{row['nm_mun']}**")
+                            
+                            with col3:
+                                potential_k = row['total_final_nm_ano'] / 1_000
+                                st.markdown(f"`{potential_k:,.0f}k Nm³/ano`")
+                    else:
+                        st.info("Nenhum município encontrado")
+            
+            with col_exp2:
+                with st.expander("📊 **Métricas Rápidas**", expanded=False):
+                    if not filtered_df.empty:
+                        # Mostrar métricas baseadas no resíduo selecionado
+                        if 'display_value' in filtered_df.columns:
+                            total_potential = filtered_df['display_value'].sum()
+                            max_potential = filtered_df['display_value'].max()
+                            avg_potential = filtered_df[filtered_df['display_value'] > 0]['display_value'].mean() if len(filtered_df[filtered_df['display_value'] > 0]) > 0 else 0
+                        else:
+                            total_potential = filtered_df['total_final_nm_ano'].sum()
+                            max_potential = filtered_df['total_final_nm_ano'].max()
+                            avg_potential = filtered_df[filtered_df['total_final_nm_ano'] > 0]['total_final_nm_ano'].mean() if len(filtered_df[filtered_df['total_final_nm_ano'] > 0]) > 0 else 0
+                        
+                        st.metric("⚡ Total", f"{total_potential/1_000_000:.1f}M Nm³/ano")
+                        st.metric("📈 Máximo", f"{max_potential/1_000:.0f}k Nm³/ano")
+                        st.metric("📊 Média", f"{avg_potential/1_000:.0f}k Nm³/ano")
+                    else:
+                        st.info("Nenhum dado encontrado")
+            
+            # Análises detalhadas em seção separada
+            with st.expander("📈 **Análises Detalhadas**", expanded=False):
+                if not filtered_df.empty:
+                    render_executive_dashboard(filtered_df)
                 else:
-                    st.metric("🥇 Maior", "0 Nm³/ano")
-            else:
-                max_potential = filtered_df['total_final_nm_ano'].max()
-                if max_potential > 0:
-                    max_city = filtered_df.loc[filtered_df['total_final_nm_ano'].idxmax(), 'nm_mun']
-                    st.metric("🥇 Maior", f"{max_potential/1_000:.0f}k Nm³/ano", help=f"Município: {max_city}")
-                else:
-                    st.metric("🥇 Maior", "0 Nm³/ano")
-        with col4:
-            if 'display_value' in filtered_df.columns:
-                with_potential = len(filtered_df[filtered_df['display_value'] > 0])
-            else:
-                with_potential = len(filtered_df[filtered_df['total_final_nm_ano'] > 0])
-            st.metric("💡 Com Potencial", f"{with_potential}/{len(filtered_df)}")
+                    st.info("Nenhum dado disponível para análise")
         
-        # Seções expansíveis (fechadas por padrão para não atrapalhar)
-        with st.expander("🏆 **Top Municípios**", expanded=False):
-            if not filtered_df.empty:
-                top_data = filtered_df.nlargest(10, 'total_final_nm_ano')
-                
-                for idx, (_, row) in enumerate(top_data.iterrows(), 1):
-                    col1, col2, col3 = st.columns([1, 4, 2])
+        # Ações rápidas compactas - OCULTAR EM FULLSCREEN
+        if not fullscreen_mode:
+            st.markdown("---")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("📥 Download", use_container_width=True):
+                    # Get columns without duplicates for CSV
+                    csv_columns = ['nm_mun', 'cd_mun']
+                    if 'selected_residues' in locals():
+                        for residue in selected_residues:
+                            if residue not in csv_columns and residue in filtered_df.columns:
+                                csv_columns.append(residue)
+                    if 'total_final_nm_ano' not in csv_columns:
+                        csv_columns.append('total_final_nm_ano')
                     
-                    with col1:
-                        st.markdown(f"**#{idx}**")
-                    
-                    with col2:
-                        st.markdown(f"**{row['nm_mun']}**")
-                    
-                    with col3:
-                        potential_k = row['total_final_nm_ano'] / 1_000
-                        st.markdown(f"`{potential_k:,.0f}k Nm³/ano`")
-        
-        with st.expander("📊 **Análises Detalhadas**", expanded=False):
-            render_executive_dashboard(filtered_df)
-        
-        # Ações rápidas compactas
-        st.markdown("---")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            if st.button("📥 Download", use_container_width=True):
-                # Get columns without duplicates for CSV
-                csv_columns = ['nm_mun', 'cd_mun']
-                if filters.get('selected_residues'):
-                    for residue in filters['selected_residues']:
-                        if residue not in csv_columns and residue in filtered_df.columns:
-                            csv_columns.append(residue)
-                if 'total_final_nm_ano' not in csv_columns:
-                    csv_columns.append('total_final_nm_ano')
-                
-                csv_columns = [col for col in csv_columns if col in filtered_df.columns]
-                csv = filtered_df[csv_columns].to_csv(index=False)
-                st.download_button(
-                    "⬇️ CSV",
-                    csv,
-                    f"cp2b_{filters.get('view_mode', 'all').lower()}.csv",
-                    "text/csv"
-                )
-        
-        with col2:
-            if st.button("🎯 Simulações", use_container_width=True):
-                st.session_state.current_page = 'simulations'
-                st.rerun()
-        
-        with col3:
-            if st.button("📈 Análises", use_container_width=True):
-                st.session_state.current_page = 'analysis'  
-                st.rerun()
-        
-        with col4:
-            if st.button("📋 Dados", use_container_width=True):
-                st.session_state.current_page = 'data'
-                st.rerun()
+                    csv_columns = [col for col in csv_columns if col in filtered_df.columns]
+                    csv = filtered_df[csv_columns].to_csv(index=False)
+                    st.download_button(
+                        "⬇️ CSV",
+                        csv,
+                        f"cp2b_biogas_dados.csv",
+                        "text/csv"
+                    )
+            
+            with col2:
+                if st.button("🎯 Simulações", use_container_width=True):
+                    st.session_state.current_page = 'simulations'
+                    st.rerun()
+            
+            with col3:
+                if st.button("📈 Análises", use_container_width=True):
+                    st.session_state.current_page = 'analysis'  
+                    st.rerun()
+            
+            with col4:
+                if st.button("📋 Dados", use_container_width=True):
+                    st.session_state.current_page = 'data'
+                    st.rerun()
     
     def render_simulations_page(self, df: pd.DataFrame, page_config: dict) -> None:
         """Renders the simulations page"""
