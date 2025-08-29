@@ -97,7 +97,6 @@ def load_additional_shapefiles():
                     gdf.loc[invalid_mask, 'geometry'] = gdf.loc[invalid_mask, 'geometry'].buffer(0)
                 
                 loaded[name] = gdf
-                st.success(f"✅ Carregado: {name} ({len(gdf)} features)")
                 
         except Exception as e:
             st.warning(f"⚠️ Erro ao carregar {name}: {e}")
@@ -286,42 +285,18 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
         dragging=True
     )
     
-    # Limitar municípios
+    # Limitar municípios baseado na coluna de display_value se disponível
     if len(gdf_filtered) > max_municipalities:
-        top_municipios = gdf_filtered.nlargest(max_municipalities, 'total_final_nm_ano')
+        sort_column = 'display_value' if 'display_value' in gdf_filtered.columns else 'total_final_nm_ano'
+        top_municipios = gdf_filtered.nlargest(max_municipalities, sort_column)
     else:
         top_municipios = gdf_filtered
     
     if len(top_municipios) == 0:
         return m
     
-    # Definir cores baseado na coluna de display e modo de visualização
-    if filters and filters.get('visualization'):
-        viz_mode = filters['visualization']
-        if viz_mode.get('mode') == "Por Fonte Específica" and viz_mode.get('source'):
-            # Usar fonte específica para coloração
-            source_col = viz_mode['source']
-            if source_col in top_municipios.columns:
-                potencial_values = top_municipios[source_col]
-            else:
-                potencial_values = top_municipios.get('display_value', top_municipios['total_final_nm_ano'])
-        elif viz_mode.get('mode') == "Por Categoria" and viz_mode.get('category'):
-            # Usar categoria específica para coloração
-            category = viz_mode['category']
-            if category == "Agrícola":
-                potencial_values = top_municipios.get('total_agricola_nm_ano', top_municipios['total_final_nm_ano'])
-            elif category == "Pecuária":
-                potencial_values = top_municipios.get('total_pecuaria_nm_ano', top_municipios['total_final_nm_ano'])
-            elif category == "Urbano":
-                # RSU + RPO urbano
-                rsu_col = top_municipios.get('rsu_potencial_nm_habitante_ano', 0)
-                rpo_col = top_municipios.get('rpo_potencial_nm_habitante_ano', 0)
-                potencial_values = rsu_col + rpo_col
-            else:
-                potencial_values = top_municipios.get('display_value', top_municipios['total_final_nm_ano'])
-        else:
-            potencial_values = top_municipios.get('display_value', top_municipios['total_final_nm_ano'])
-    elif 'display_value' in top_municipios.columns:
+    # Usar display_value para coloração e tamanho dos marcadores
+    if 'display_value' in top_municipios.columns:
         potencial_values = top_municipios['display_value']
     else:
         potencial_values = top_municipios['total_final_nm_ano']
@@ -387,7 +362,11 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
             if pd.isna(row['lat']) or pd.isna(row['lon']):
                 continue
                 
-            potencial = row.get('display_value', row['total_final_nm_ano'])
+            # Usar display_value se disponível, senão usar total_final_nm_ano
+            if 'display_value' in row.index:
+                potencial = row['display_value']
+            else:
+                potencial = row.get('total_final_nm_ano', 0)
             
             # Popup otimizado com detalhamento por resíduo
             popup_html = create_detailed_popup(row, potencial, filters)
@@ -723,32 +702,39 @@ def render_layer_controls() -> Dict[str, bool]:
     }
 
 def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = None, layer_controls: Dict[str, bool] = None, filters: Dict[str, Any] = None) -> None:
-    """Renderiza mapa com interface limpa e suporte a múltiplas camadas"""
+    """Renderiza mapa com dados pré-filtrados do dashboard"""
     
-    # Título dinâmico baseado no modo de visualização
-    viz_mode = filters.get('visualization', {}) if filters else {}
-    if viz_mode.get('mode') == "Por Categoria":
-        title = f"🗺️ Potencial de Biogás - {viz_mode.get('category')}"
-    elif viz_mode.get('mode') == "Por Fonte Específica":
-        source_names = {
-            'biogas_cana': 'Cana-de-açúcar',
-            'biogas_soja': 'Soja',
-            'biogas_milho': 'Milho',
-            'biogas_bovino': 'Bovinos',
-            'biogas_cafe': 'Café',
-            'biogas_citros': 'Citros',
-            'biogas_suinos': 'Suínos',
-            'biogas_aves': 'Aves',
-            'biogas_piscicultura': 'Piscicultura',
-            'total_ch4_rsu_rpo': 'RSU + RPO'
-        }
-        source_name = source_names.get(viz_mode.get('source'), 'Fonte Específica')
-        title = f"🗺️ Potencial de Biogás - {source_name}"
-    else:
-        title = "🗺️ Potencial Total de Biogás"
+    # Verificar se dados já vêm pré-filtrados
+    is_pre_filtered = filters and filters.get('pre_filtered', False)
     
-    st.subheader(title)
     
+    # CONTROLES SIMPLIFICADOS - APENAS CAMADAS ADICIONAIS
+    controls_container = st.container()
+    with controls_container:
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("**🗺️ Camadas Adicionais:**")
+            layer_options = st.multiselect(
+                "Selecione camadas:",
+                options=[
+                    "🏭 Plantas de Biogás Existentes",
+                    "🏛️ Regiões Administrativas", 
+                    "🗺️ Limite de São Paulo",
+                    "🌾 Áreas Agrícolas",
+                ],
+                default=[],
+                key="map_layer_selector"
+            )
+        
+        with col2:
+            st.markdown("**📊 Status:**")
+            display_count = len(municipios_data[municipios_data['display_value'] > 0]) if 'display_value' in municipios_data.columns else len(municipios_data)
+            st.info(f"🎯 **Exibindo:** {len(municipios_data)} municípios ({display_count} com potencial)")
+        
+        st.markdown("---")
+    
+    # Os dados já vêm pré-filtrados do dashboard, apenas usar diretamente
     # Carregar shapefile principal
     gdf = load_and_process_shapefile()
     
@@ -756,93 +742,173 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
         st.error("Não foi possível carregar o mapa")
         return
     
-    # Carregar shapefiles adicionais se necessário
+    # Processar camadas adicionais
     additional_layers = {}
-    if layer_controls and any(layer_controls.values()):
+    if layer_options:
         with st.spinner("Carregando camadas adicionais..."):
-            additional_layers = load_additional_shapefiles()
-    
-    # Controles do mapa
-    col1, col2, col3 = st.columns([2, 2, 1])
+            layer_mapping = {
+                "🏭 Plantas de Biogás Existentes": "plantas_biogas",
+                "🏛️ Regiões Administrativas": "regioes_admin",
+                "🗺️ Limite de São Paulo": "limite_sp",
+            }
+            
+            shapefile_layers = load_additional_shapefiles()
+            for layer_name in layer_options:
+                layer_key = layer_mapping.get(layer_name)
+                if layer_key and layer_key in shapefile_layers:
+                    additional_layers[layer_key] = shapefile_layers[layer_key]
 
-    with col1:
-        max_municipalities = st.slider(
-            "Máximo de Municípios no Mapa:",
-            min_value=25, max_value=645, value=100, step=25,
-            help="Quantidade reduzida para melhor legibilidade - evita sobreposição de pontos"
-        )
-
-    with col2:
-        # Opções de visualização
-        visualization_mode = st.selectbox(
-            "Estilo de Visualização:",
-            options=["Compacto (Recomendado)", "Detalhado", "Minimalista"],
-            index=0,
-            help="Compacto: pontos menores, menos sobreposição | Detalhado: mais informações | Minimalista: apenas essencial"
-        )
-        
-        # Mostrar status das camadas carregadas
-        if additional_layers:
-            layers_loaded = len(additional_layers)
-            st.success(f"✅ {layers_loaded} camada(s) adicional(is)")
-        else:
-            st.info("📍 Camada principal ativa")
-
-    with col3:
-        if st.button("🔄 Atualizar"):
-            st.cache_data.clear()
-            st.rerun()
+    # Camadas carregadas silenciosamente
     
-    # Informação sobre melhorias
-    st.info("✅ **Melhorias implementadas:** Agrupamento de pontos desabilitado, raios otimizados para evitar sobreposição, visualização individual de cada município.")
-    
-    # Processar dados
+    # Processar dados pré-filtrados do dashboard
     if hasattr(municipios_data, 'to_dict'):
         municipios_dict = municipios_data.set_index('cd_mun').to_dict('index')
     else:
         municipios_dict = {str(m.get('cd_mun', m.get('CD_MUN'))): m for m in municipios_data}
     
-    # Junção shapefile + dados
+    # Junção shapefile + dados pré-filtrados
     gdf_filtered = gdf.copy()
     
-    # Adicionar fonte de dados
-    gdf_filtered['data_source'] = 'shapefile'
-    gdf_filtered.loc[gdf_filtered['cd_mun'].isin(municipios_dict.keys()), 'data_source'] = 'sqlite'
-    
-    # Atualizar dados do SQLite
+    # Transferir dados do SQLite para o GeoDataFrame
     for idx, row in gdf_filtered.iterrows():
         cd_mun = row['cd_mun']
         if cd_mun in municipios_dict:
             sqlite_data = municipios_dict[cd_mun]
-            for col in ['total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano']:
-                if col in sqlite_data:
-                    gdf_filtered.at[idx, col] = float(sqlite_data[col] or 0)
+            # Atualizar todas as colunas dos dados filtrados
+            for col in municipios_data.columns:
+                if col in sqlite_data and col != 'cd_mun':
+                    try:
+                        value = float(sqlite_data[col] or 0)
+                        gdf_filtered.at[idx, col] = value
+                    except (ValueError, TypeError):
+                        gdf_filtered.at[idx, col] = 0
     
     # Aplicar filtro de municípios selecionados
     if selected_municipios:
         gdf_filtered = gdf_filtered[gdf_filtered['cd_mun'].isin(selected_municipios)]
     
-    # Estatísticas (removidas para simplificar)
-    pass
+    # Filtrar apenas os municípios que estão nos dados pré-filtrados
+    municipios_filtrados_ids = municipios_data['cd_mun'].astype(str).tolist()
+    gdf_filtered = gdf_filtered[gdf_filtered['cd_mun'].isin(municipios_filtrados_ids)]
     
-    # Criar e renderizar mapa
+    # Garantir que display_value existe no GeoDataFrame
+    if 'display_value' not in gdf_filtered.columns and 'display_value' in municipios_data.columns:
+        gdf_filtered = gdf_filtered.merge(
+            municipios_data[['cd_mun', 'display_value']], 
+            left_on='cd_mun', 
+            right_on='cd_mun', 
+            how='left'
+        )
+        gdf_filtered['display_value'] = gdf_filtered['display_value'].fillna(0)
+    
+    # Verificar compatibilidade de códigos automaticamente
+    shapefile_ids = set(gdf['cd_mun'].astype(str))
+    data_ids = set(municipios_data['cd_mun'].astype(str))
+    intersection = shapefile_ids.intersection(data_ids)
+    
+    if len(intersection) == 0:
+        
+        # Corrigir formato dos códigos - remover .0 dos dados
+        gdf_filtered = gdf.copy()
+        municipios_data_copy = municipios_data.copy()
+        
+        # Normalizar códigos para string sem .0
+        gdf_filtered['cd_mun_clean'] = gdf_filtered['cd_mun'].astype(str).str.replace('.0', '')
+        municipios_data_copy['cd_mun_clean'] = municipios_data_copy['cd_mun'].astype(str).str.replace('.0', '')
+        
+        # Verificar match após limpeza
+        clean_intersection = set(gdf_filtered['cd_mun_clean']).intersection(set(municipios_data_copy['cd_mun_clean']))
+        
+        # Merge com códigos limpos e resolver conflitos de colunas
+        gdf_filtered = gdf_filtered.merge(
+            municipios_data_copy,
+            left_on='cd_mun_clean',
+            right_on='cd_mun_clean',
+            how='inner',
+            suffixes=('_shp', '_data')
+        )
+        
+        # Resolver conflitos de colunas comuns e garantir colunas essenciais
+        if 'cd_mun_data' in gdf_filtered.columns and 'cd_mun_shp' in gdf_filtered.columns:
+            gdf_filtered['cd_mun'] = gdf_filtered['cd_mun_shp']  # Manter o do shapefile
+        
+        if 'nm_mun_data' in gdf_filtered.columns and 'nm_mun_shp' in gdf_filtered.columns:
+            gdf_filtered['nm_mun'] = gdf_filtered['nm_mun_shp']  # Manter o do shapefile
+        elif 'nm_mun_data' in gdf_filtered.columns:
+            gdf_filtered['nm_mun'] = gdf_filtered['nm_mun_data']
+        elif 'nm_mun_shp' in gdf_filtered.columns:
+            gdf_filtered['nm_mun'] = gdf_filtered['nm_mun_shp']
+        
+        # Garantir que colunas essenciais existam usando dados da origem correta
+        essential_columns = ['total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano', 'display_value']
+        for col in essential_columns:
+            if col not in gdf_filtered.columns:
+                # Tentar pegar da versão _data primeiro, depois _shp
+                if f'{col}_data' in gdf_filtered.columns:
+                    gdf_filtered[col] = gdf_filtered[f'{col}_data']
+                elif f'{col}_shp' in gdf_filtered.columns:
+                    gdf_filtered[col] = gdf_filtered[f'{col}_shp']
+                else:
+                    # Se não existir, criar com zeros
+                    gdf_filtered[col] = 0.0
+        
+        # Garantir que lat/lon existam
+        if 'lat' not in gdf_filtered.columns or 'lon' not in gdf_filtered.columns:
+            if 'geometry' in gdf_filtered.columns:
+                gdf_filtered['centroid'] = gdf_filtered.geometry.centroid
+                gdf_filtered['lat'] = gdf_filtered['centroid'].y
+                gdf_filtered['lon'] = gdf_filtered['centroid'].x
+        
+    
+    # Verificação final das colunas essenciais (silenciosa)
+    required_cols = ['nm_mun', 'cd_mun', 'total_final_nm_ano', 'display_value', 'lat', 'lon', 'geometry']
+    missing_cols = [col for col in required_cols if col not in gdf_filtered.columns]
+    
+    if missing_cols:
+        # Criar colunas em falta com valores padrão silenciosamente
+        for col in missing_cols:
+            if col in ['lat', 'lon']:
+                if 'geometry' in gdf_filtered.columns:
+                    centroids = gdf_filtered.geometry.centroid
+                    if col == 'lat':
+                        gdf_filtered['lat'] = centroids.y
+                    else:
+                        gdf_filtered['lon'] = centroids.x
+                else:
+                    gdf_filtered[col] = 0.0
+            else:
+                gdf_filtered[col] = 0.0 if col not in ['nm_mun', 'cd_mun'] else 'Unknown'
+    
+    # Criar e renderizar mapa com dados pré-filtrados
     try:
         biogas_map = create_clean_marker_map(
             gdf_filtered, 
-            max_municipalities, 
+            500,  # Usar limite alto já que dados vêm filtrados
             additional_layers=additional_layers,
             layer_controls=layer_controls,
-            visualization_mode=visualization_mode,
-            filters=filters
+            visualization_mode="Compacto (Recomendado)",
+            filters={'pre_filtered': True}  # Indicar que dados já estão filtrados
         )
         
-        map_data = st_folium(
-            biogas_map, 
-            width=None,
-            height=600,
-            use_container_width=True,
-            returned_objects=["last_object_clicked"]
-        )
+        
+        # CONTAINER FIXO PARA O MAPA - EVITA MOVIMENTO NA PÁGINA
+        map_container = st.container()
+        with map_container:
+            # Key simples baseada no número de municípios filtrados
+            import hashlib
+            
+            # Criar hash baseado nos dados filtrados
+            data_signature = f"{len(municipios_data)}_{len(layer_options)}"
+            map_key = f"biogas_map_{hashlib.md5(data_signature.encode()).hexdigest()[:8]}"
+            
+            map_data = st_folium(
+                biogas_map, 
+                width=None,
+                height=600,
+                use_container_width=True,
+                returned_objects=["last_object_clicked"],
+                key=map_key  # Key única força regeneração total
+            )
         
         # Informação do clique (removida para simplificar)
         pass
