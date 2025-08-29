@@ -75,8 +75,8 @@ def inject_global_css(dark_mode: bool = False) -> None:
             "shadow_opacity": "0.1"
         }
 
-    st.markdown(
-        f"""
+    # Build CSS string without f-string to avoid % conflicts
+    css_styles = f"""
         <style>
         /* ==== SISTEMA DE CORES MODERNO ==== */
         :root {{
@@ -99,7 +99,10 @@ def inject_global_css(dark_mode: bool = False) -> None:
             --shadow-lg: 0 10px 25px rgba(0,0,0,{colors["shadow_opacity"]}), 0 4px 10px rgba(0,0,0,0.1);
             --radius: 12px;
             --radius-sm: 8px;
-        }}
+        }}"""
+
+    # Add the rest of CSS without f-string formatting
+    css_styles += """
         
         /* ==== LAYOUT E TIPOGRAFIA ==== */
         .main > div {
@@ -407,6 +410,331 @@ def inject_global_css(dark_mode: bool = False) -> None:
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* ==== UTILITÁRIOS ==== */
+        .text-center { text-align: center; }
+        .text-muted { color: var(--text-muted); }
+        .mb-0 { margin-bottom: 0 !important; }
+        .mb-1 { margin-bottom: 0.5rem !important; }
+        .mb-2 { margin-bottom: 1rem !important; }
+        .mt-0 { margin-top: 0 !important; }
+        .mt-1 { margin-top: 0.5rem !important; }
+        .mt-2 { margin-top: 1rem !important; }
+        </style>
+        """
+
+    st.markdown(
+        css_styles,
+        unsafe_allow_html=True,
+    )
+        
+        /* ==== LAYOUT E TIPOGRAFIA ==== */
+        .main > div {
+            padding-top: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .stApp {
+            background: var(--bg-primary) !important;
+        }
+        
+        /* ==== HEADERS LIMPOS SEM GRADIENTE ==== */
+        .clean-header {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 1.5rem 2rem;
+            border-radius: var(--radius);
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-md);
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+        
+        .clean-header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .clean-header p {
+            margin: 0.5rem 0 0 0;
+            opacity: 0.8;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+        }
+        
+        /* ==== CARDS DE MÉTRICAS APRIMORADOS ==== */
+        .metric-card {
+            background: var(--bg-primary);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            color: var(--text-primary);
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--primary-gradient);
+        }
+        
+        .metric-card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0.5rem 0;
+            line-height: 1.2;
+        }
+        
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+        }
+        
+        .metric-delta {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+        
+        /* ==== SEÇÕES LIMPAS SEM GRADIENTE ==== */
+        .section-header {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius);
+            margin: 2rem 0 1rem 0;
+            box-shadow: var(--shadow-sm);
+            border-left: 4px solid #48bb78;
+        }
+        
+        .section-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-primary);
+        }
+        
+        .section-header-info {
+            border-left-color: #4299e1;
+        }
+        
+        .section-header-warning {
+            border-left-color: #ed8936;
+        }
+        
+        .section-header-danger {
+            border-left-color: #f56565;
+        }
+        
+        /* ==== SIDEBAR APRIMORADA ==== */
+        .sidebar .sidebar-content {
+            background: var(--bg-primary);
+            border-radius: var(--radius);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: var(--shadow-sm);
+            color: var(--text-primary);
+        }
+
+        /* Streamlit sidebar styling */
+        .css-1d391kg {
+            background: var(--bg-primary) !important;
+        }
+
+        .css-1lcbmhc {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        /* ==== TABELAS E DATAFRAMES ==== */
+        .stDataFrame > div {
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+        
+        /* ==== BOTÕES APRIMORADOS ==== */
+        .stButton > button {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        
+        /* ==== SELECTBOX E INPUTS ==== */
+        .stSelectbox > div > div {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        .stNumberInput > div > div {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+
+        .stTextInput > div > div {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        /* ==== PROGRESS BARS ==== */
+        .stProgress > div > div > div {
+            background: var(--primary-gradient);
+            border-radius: var(--radius-sm);
+        }
+        
+        /* ==== ALERTAS E NOTIFICAÇÕES ==== */
+        .stAlert {
+            border-radius: var(--radius);
+            border: none;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* ==== TABS MODERNAS ==== */
+        .stTabs > div > div > div > div {
+            background: var(--bg-secondary);
+            border-radius: var(--radius) var(--radius) 0 0;
+            border-bottom: 3px solid transparent;
+            color: var(--text-primary);
+        }
+        
+        .stTabs > div > div > div > div[aria-selected="true"] {
+            border-bottom: 3px solid #667eea;
+            background: var(--primary-gradient);
+            color: white !important;
+        }
+
+        /* Métricas do Streamlit */
+        [data-testid="metric-container"] {
+            background: var(--bg-primary) !important;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 1rem;
+            color: var(--text-primary) !important;
+        }
+
+        [data-testid="metric-container"] > div {
+            color: var(--text-primary) !important;
+        }
+
+        [data-testid="metric-container"] label {
+            color: var(--text-secondary) !important;
+        }
+        
+        /* ==== LOADING E SPINNERS ==== */
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+        }
+        
+        .loading-spinner::after {
+            content: '';
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border-color);
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0%% { transform: rotate(0deg); }
+            100%% { transform: rotate(360deg); }
+        }
+        
+        /* ==== RESPONSIVIDADE ==== */
+        @media (max-width: 768px) {
+            .main > div {
+                padding-top: 1rem;
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            
+            .gradient-header h1 {
+                font-size: 2rem;
+            }
+            
+            .metric-value {
+                font-size: 1.5rem;
+            }
+            
+            .metric-card {
+                padding: 1rem;
+            }
+        }
+        
+        /* ==== ACESSIBILIDADE ==== */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        
+        /* ==== ANIMAÇÕES SUAVES ==== */
+        * {
+            transition: all 0.2s ease;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from {{ opacity: 0; transform: translateY(20px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
         }
         
         /* ==== UTILITÁRIOS ==== */

@@ -5,7 +5,11 @@ Sidebar elaborada com filtros avançados para análise de biogás
 import streamlit as st
 import pandas as pd
 from typing import Dict, List, Optional, Any
-from utils.database import query_df, MunicipalQueries
+try:
+    from utils.database import query_df, MunicipalQueries
+except ImportError:
+    # Fallback for Streamlit Cloud
+    from src.streamlit.utils.database import query_df, MunicipalQueries
 import logging
 
 logger = logging.getLogger(__name__)

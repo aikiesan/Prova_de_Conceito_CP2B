@@ -12,25 +12,55 @@ from pathlib import Path
 # Imports dos componentes
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from components.sidebar import render_sidebar
-from components.maps import render_map
-from components.charts import top_municipios_bar
-from components.tables import render_table
-from components.executive_dashboard import render_executive_dashboard
-from components.residue_analysis import render_residue_analysis_dashboard
-from utils.database import (
-    query_df, MunicipalQueries, get_cache_stats, 
-    clear_cache, initialize_database
-)
-from utils.calculations import (
-    recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
-)
-from utils.styling import (
-    inject_global_css, create_gradient_header, create_section_header, 
-    create_metric_card, create_theme_toggle
-)
+# Add both local and project root to path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+project_root = os.path.dirname(parent_dir)
+
+sys.path.extend([current_dir, parent_dir, project_root])
+
+try:
+    from components.sidebar import render_sidebar
+    from components.maps import render_map
+    from components.charts import top_municipios_bar
+    from components.tables import render_table
+    from components.executive_dashboard import render_executive_dashboard
+    from components.residue_analysis import render_residue_analysis_dashboard
+except ImportError:
+    # Fallback for Streamlit Cloud
+    from src.streamlit.components.sidebar import render_sidebar
+    from src.streamlit.components.maps import render_map
+    from src.streamlit.components.charts import top_municipios_bar
+    from src.streamlit.components.tables import render_table
+    from src.streamlit.components.executive_dashboard import render_executive_dashboard
+    from src.streamlit.components.residue_analysis import render_residue_analysis_dashboard
+
+try:
+    from utils.database import (
+        query_df, MunicipalQueries, get_cache_stats, 
+        clear_cache, initialize_database
+    )
+    from utils.calculations import (
+        recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
+    )
+    from utils.styling_simple import (
+        inject_global_css, create_gradient_header, create_section_header, 
+        create_metric_card, create_theme_toggle
+    )
+except ImportError:
+    # Fallback for Streamlit Cloud
+    from src.streamlit.utils.database import (
+        query_df, MunicipalQueries, get_cache_stats, 
+        clear_cache, initialize_database
+    )
+    from src.streamlit.utils.calculations import (
+        recompute_total_by_sources, render_scenario_simulator, apply_scenario_to_data
+    )
+    from src.streamlit.utils.styling_simple import (
+        inject_global_css, create_gradient_header, create_section_header, 
+        create_metric_card, create_theme_toggle
+    )
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
