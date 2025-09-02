@@ -623,9 +623,26 @@ class CP2BDashboard:
                 st.markdown(f"## {map_title}")
                 st.markdown("---")
             
+            # PRIMEIRO: RENDERIZAR MAPA (FOCO PRINCIPAL)
+            # Inicializar estado das camadas se não existir
+            if 'layer_controls_state' not in st.session_state:
+                st.session_state.layer_controls_state = {
+                    'limite_sp': False,
+                    'regioes_admin': False, 
+                    'areas_urbanas': False,
+                    'rodovias_estaduais': False,
+                    'gasodutos_transporte': False,
+                    'gasodutos_distribuicao': False,
+                    'plantas_biogas': False
+                }
+            
+            # Usar estado atual das camadas para o mapa
+            layer_controls_result = {'layer_controls': st.session_state.layer_controls_state}
+            
             render_map(
                 filtered_df,  # Dados já filtrados pelo dashboard
                 selected_municipios=st.session_state.get('selected_municipios', []),
+                layer_controls=layer_controls_result,  # Estado atual das camadas
                 filters={
                     'pre_filtered': True,  # Indica que dados já vêm filtrados
                     'selection_mode': selection_mode,
@@ -636,13 +653,16 @@ class CP2BDashboard:
             )
             
             st.caption("💡 Clique nos pontos do mapa para mais informações sobre cada município")
-        
-            # CONTROLES CONDICIONAIS - OCULTAR EM FULLSCREEN PARA MAXIMIZAR MAPA
+            
+            # DEPOIS: CONTROLES DE CAMADAS ABAIXO DO MAPA
             if not fullscreen_mode:
-                # CONTROLES DE CAMADAS ABAIXO DO MAPA
-                st.markdown("---")
-                
-                layer_controls_result = render_layer_controls_below_map(filtered_df)
+                updated_controls = render_layer_controls_below_map(filtered_df)
+                # Atualizar estado da sessão com as novas seleções
+                if updated_controls.get('layer_controls'):
+                    st.session_state.layer_controls_state.update(updated_controls['layer_controls'])
+        
+            # MOSTRAR BREAKDOWN EM MODO NÃO-FULLSCREEN
+            if not fullscreen_mode:
                 
                 # Mostrar breakdown de múltiplos resíduos se aplicável
                 if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:
@@ -675,10 +695,7 @@ class CP2BDashboard:
                     
                     st.markdown("---")
                 
-                if layer_controls_result.get('selected_layers'):
-                    st.success(f"✅ Camadas ativadas: {', '.join(layer_controls_result['selected_layers'])}")
-                else:
-                    st.info("💡 Selecione camadas adicionais para enriquecer a visualização do mapa")
+                # Remover mensagens desnecessárias para interface limpa
             else:
                 # Apenas informações essenciais em fullscreen
                 if selection_mode == "🔄 Múltiplos" and len(selected_residues) > 1:

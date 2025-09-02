@@ -11,9 +11,16 @@ SHAPEFILE_PATH = ROOT / "shapefile" / "Municipios_SP_shapefile.shp"
 
 # Caminhos para shapefiles adicionais
 ADDITIONAL_SHAPEFILES = {
+    # Camadas existentes
     'limite_sp': ROOT / "shapefile" / "Limite_SP.shp",
     'plantas_biogas': ROOT / "shapefile" / "Plantas_Biogas_SP.shp",
-    'regioes_admin': ROOT / "shapefile" / "Regiao_Adm_SP.shp"
+    'regioes_admin': ROOT / "shapefile" / "Regiao_Adm_SP.shp",
+
+    # --- NOVAS CAMADAS ADICIONADAS ---
+    'areas_urbanas': ROOT / "shapefile" / "Areas_Urbanas_SP.shp",
+    'gasodutos_transporte': ROOT / "shapefile" / "Gasodutos_Transporte_SP.shp",
+    'gasodutos_distribuicao': ROOT / "shapefile" / "Gasodutos_Distribuicao_SP.shp",
+    'rodovias_estaduais': ROOT / "shapefile" / "Rodovias_Estaduais_SP.shp"
 }
 
 @st.cache_data
@@ -99,15 +106,20 @@ def load_additional_shapefiles():
                 loaded[name] = gdf
                 
         except Exception as e:
-            st.warning(f"⚠️ Erro ao carregar {name}: {e}")
+            # Log silencioso - apenas para development se necessário
             continue
     
     return loaded
 
-def create_detailed_popup(row: pd.Series, potencial: float, filters: Dict = None) -> str:
+def create_detailed_popup(row: pd.Series, potencial: float, filters: Dict = None, municipio_nome: str = None) -> str:
     """Cria popup detalhado com TODOS os resíduos disponíveis no município"""
     
-    municipio_nome = str(row['nm_mun']).replace("'", "").replace('"', '')
+    if municipio_nome is None:
+        # Fallback para compatibilidade
+        municipio_nome = str(row.get('nm_mun', row.get('NM_MUN', 'Município'))).replace("'", "").replace('"', '')
+    else:
+        municipio_nome = str(municipio_nome).replace("'", "").replace('"', '')
+    
     codigo_mun = str(row["cd_mun"])
     
     # Dados básicos
@@ -177,6 +189,12 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
         doubleClickZoom=True,
         dragging=True
     )
+    
+    # --- MUDANÇA CRÍTICA DE ORDEM ---
+    # Adicione as camadas de referência (fundo) PRIMEIRO
+    if additional_layers and layer_controls:
+        add_additional_layers_to_map(m, additional_layers, layer_controls)
+    # ------------------------------------
     
     # Limitar municípios baseado na coluna de display_value se disponível
     if len(gdf_filtered) > max_municipalities:
@@ -262,7 +280,16 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
                 potencial = row.get('total_final_nm_ano', 0)
             
             # Popup otimizado com detalhamento por resíduo
-            popup_html = create_detailed_popup(row, potencial, filters)
+            # Corrigir nome do município - usar NM_MUN se nm_mun estiver zerado
+            if row.get('nm_mun', '0') == '0' or str(row.get('nm_mun', '')).strip() == '':
+                if 'NM_MUN' in row.index:
+                    municipio_nome = row['NM_MUN']
+                else:
+                    municipio_nome = 'Município'
+            else:
+                municipio_nome = row['nm_mun']
+            
+            popup_html = create_detailed_popup(row, potencial, filters, municipio_nome)
             
             # Configurações baseadas no modo de visualização
             if visualization_mode == "Minimalista":
@@ -299,7 +326,7 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
                 location=[row['lat'], row['lon']],
                 radius=radius,
                 popup=folium.Popup(popup_html, max_width=300),
-                tooltip=f"🏛️ {row['nm_mun']}: {potencial:,.0f} Nm³/ano",
+                tooltip=f"🏛️ {municipio_nome}: {potencial:,.0f} Nm³/ano",
                 color=stroke_color,
                 weight=stroke_weight,
                 fillColor=get_color(potencial),
@@ -315,9 +342,15 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
         if potencial_values.max() > 0:
             create_interactive_legend(m, top_municipios, list(colors.values()), potencial_values)
     
-    # Adicionar camadas adicionais se disponíveis
-    if additional_layers and layer_controls:
-        add_additional_layers_to_map(m, additional_layers, layer_controls)
+    # --- REMOVIDA CHAMADA ANTIGA ---
+    # A chamada a add_additional_layers_to_map foi movida para o início da função
+    # ------------------------------------
+    
+    # Adicionar o controle de camadas no final para que ele veja todas as camadas adicionadas
+    folium.LayerControl(
+        position='topright',
+        collapsed=False
+    ).add_to(m)
     
     # Adicionar JavaScript para desabilitar auto-pan nos popups
     disable_autopan_js = """
@@ -496,175 +529,154 @@ def create_interactive_legend(m: folium.Map, municipios_data: pd.DataFrame, colo
         m.get_root().html.add_child(folium.Element(simple_legend))
 
 def add_additional_layers_to_map(folium_map: folium.Map, additional_layers: Dict, layer_controls: Dict) -> None:
-    """Adiciona camadas adicionais ao mapa usando Feature Groups para controle individual"""
+    """Adiciona camadas de referência visual ao mapa."""
     
-    # Criar grupos de camadas para controle individual
-    layer_groups = {}
+    actual_controls = layer_controls.get('layer_controls', {})
     
-    # Adicionar limite de SP
-    if layer_controls.get('limite_sp', False) and 'limite_sp' in additional_layers:
+    # Função auxiliar para limpar os dados e manter apenas a geometria
+    def get_geometry_only(gdf):
+        """Remove todas as colunas exceto geometry para evitar erros de serialização."""
+        return gdf[['geometry']].copy()
+    
+    # Limite de SP
+    if actual_controls.get('limite_sp', False) and 'limite_sp' in additional_layers:
+        group = folium.FeatureGroup(name="🗺️ Limite de SP", show=True, overlay=True, control=True)
         try:
-            limite_group = folium.FeatureGroup(name="🔴 Limite de SP", show=True)
-            
             folium.GeoJson(
-                additional_layers['limite_sp'],
-                style_function=lambda x: {
-                    'color': '#FF0000',
-                    'weight': 2,
-                    'fillOpacity': 0,
-                    'opacity': 0.6,
-                    'dashArray': '5, 5'  # Linha tracejada para não interferir
-                },
-                tooltip=folium.Tooltip("Limite do Estado de São Paulo")
-            ).add_to(limite_group)
-            
-            limite_group.add_to(folium_map)
-            layer_groups['limite_sp'] = limite_group
-            
-        except Exception as e:
-            st.warning(f"Erro ao adicionar limite SP: {e}")
-    
-    # Adicionar usinas de biogás existentes
-    if layer_controls.get('plantas_biogas', False) and 'plantas_biogas' in additional_layers:
+                get_geometry_only(additional_layers['limite_sp']),
+                style_function=lambda x: {'color': '#c91c1c', 'weight': 3, 'fillOpacity': 0, 'opacity': 0.8, 'dashArray': '5, 5'}
+            ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
+
+    # Regiões Administrativas
+    if actual_controls.get('regioes_admin', False) and 'regioes_admin' in additional_layers:
+        group = folium.FeatureGroup(name="🏛️ Regiões Administrativas", show=True, overlay=True, control=True)
         try:
-            plantas_group = folium.FeatureGroup(name="🏭 Usinas Existentes", show=True)
-            plantas_gdf = additional_layers['plantas_biogas']
-            
-            for idx, row in plantas_gdf.iterrows():
-                # Extrair coordenadas do ponto
-                if hasattr(row.geometry, 'x') and hasattr(row.geometry, 'y'):
-                    lat, lon = row.geometry.y, row.geometry.x
-                else:
-                    # Se for polígono, usar centroide
-                    centroid = row.geometry.centroid
-                    lat, lon = centroid.y, centroid.x
-                
-                # Criar popup com informações da usina
-                nome_usina = row.get('NOME', row.get('Nome', row.get('nome', 'Usina de Biogás')))
-                tipo_usina = row.get('TIPO', row.get('Tipo', row.get('tipo', 'N/A')))
-                
-                popup_html = f"""
-                <div style='width: 200px; font-family: Arial;'>
-                    <h4>🏭 {nome_usina}</h4>
-                    <b>Tipo:</b> {tipo_usina}<br>
-                    <b>Coordenadas:</b> {lat:.4f}, {lon:.4f}
-                </div>
-                """
-                
+            folium.GeoJson(
+                get_geometry_only(additional_layers['regioes_admin']),
+                style_function=lambda x: {'color': '#5a5a5a', 'weight': 2, 'fillColor': '#999999', 'fillOpacity': 0.15}
+            ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
+
+    # Plantas de Biogás
+    if actual_controls.get('plantas_biogas', False) and 'plantas_biogas' in additional_layers:
+        group = folium.FeatureGroup(name="🏭 Usinas de Biogás", show=True, overlay=True, control=True)
+        try:
+            for _, row in additional_layers['plantas_biogas'].iterrows():
+                coords = row.geometry.centroid
                 folium.Marker(
-                    location=[lat, lon],
-                    popup=folium.Popup(popup_html, max_width=220),
-                    tooltip=f"Usina: {nome_usina}",
-                    icon=folium.Icon(
-                        color='orange',
-                        icon='industry',
-                        prefix='fa'
-                    )
-                ).add_to(plantas_group)
-            
-            plantas_group.add_to(folium_map)
-            layer_groups['plantas_biogas'] = plantas_group
-                
-        except Exception as e:
-            st.warning(f"Erro ao adicionar plantas de biogás: {e}")
-    
-    # Adicionar regiões administrativas
-    if layer_controls.get('regioes_admin', False) and 'regioes_admin' in additional_layers:
+                    location=[coords.y, coords.x],
+                    icon=folium.Icon(color='gray', icon='industry', prefix='fa', icon_color='#ffffff')
+                ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
+
+    # Áreas Urbanas
+    if actual_controls.get('areas_urbanas', False) and 'areas_urbanas' in additional_layers:
+        group = folium.FeatureGroup(name="🏙️ Áreas Urbanas", show=True, overlay=True, control=True)
         try:
-            regioes_group = folium.FeatureGroup(name="🌍 Regiões Admin.", show=True)
+            folium.GeoJson(
+                get_geometry_only(additional_layers['areas_urbanas']),
+                style_function=lambda x: {'fillColor': '#d3d3d3', 'fillOpacity': 0.4, 'color': '#a0a0a0', 'weight': 1, 'opacity': 0.6}
+            ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
+
+    # Gasodutos de Transporte
+    if actual_controls.get('gasodutos_transporte', False) and 'gasodutos_transporte' in additional_layers:
+        group = folium.FeatureGroup(name="🔵 Gasodutos (Transporte)", show=True, overlay=True, control=True)
+        try:
+            folium.GeoJson(
+                get_geometry_only(additional_layers['gasodutos_transporte']),
+                style_function=lambda x: {'color': '#003366', 'weight': 3, 'opacity': 0.8}
+            ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
             
-            # Cores diferentes para cada região
-            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
-            
-            regioes_gdf = additional_layers['regioes_admin']
-            
-            for idx, row in regioes_gdf.iterrows():
-                color = colors[idx % len(colors)]
-                nome_regiao = row.get('NOME', row.get('Nome', row.get('nome', f'Região {idx+1}')))
-                
-                folium.GeoJson(
-                    row.geometry,
-                    style_function=lambda x, color=color: {
-                        'color': color,
-                        'weight': 1,
-                        'fillOpacity': 0.05,  # Muito transparente para não interferir
-                        'opacity': 0.5
-                    },
-                    popup=folium.Popup(f"<b>Região Administrativa:</b><br>{nome_regiao}", max_width=200),
-                    tooltip=f"Região: {nome_regiao}"
-                ).add_to(regioes_group)
-            
-            regioes_group.add_to(folium_map)
-            layer_groups['regioes_admin'] = regioes_group
-                
-        except Exception as e:
-            st.warning(f"Erro ao adicionar regiões administrativas: {e}")
-    
-    # Adicionar controle de camadas se houver camadas
-    if layer_groups:
-        folium.LayerControl(
-            position='topright',
-            collapsed=False
-        ).add_to(folium_map)
+    # Gasodutos de Distribuição
+    if actual_controls.get('gasodutos_distribuicao', False) and 'gasodutos_distribuicao' in additional_layers:
+        group = folium.FeatureGroup(name="⚪ Gasodutos (Distribuição)", show=True, overlay=True, control=True)
+        try:
+            folium.GeoJson(
+                get_geometry_only(additional_layers['gasodutos_distribuicao']),
+                style_function=lambda x: {'color': '#3399CC', 'weight': 2, 'opacity': 0.8, 'dashArray': '5, 5'}
+            ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
+
+    # Rodovias Estaduais
+    if actual_controls.get('rodovias_estaduais', False) and 'rodovias_estaduais' in additional_layers:
+        group = folium.FeatureGroup(name="🚗 Rodovias Estaduais", show=True, overlay=True, control=True)
+        try:
+            folium.GeoJson(
+                get_geometry_only(additional_layers['rodovias_estaduais']),
+                style_function=lambda x: {'color': '#4a4a4a', 'weight': 2.5, 'opacity': 0.7}
+            ).add_to(group)
+            group.add_to(folium_map)
+        except Exception:
+            pass
 
 def render_layer_controls_below_map(municipios_data: pd.DataFrame) -> Dict[str, bool]:
-    """Renderiza controles de camadas adicionais ABAIXO do mapa"""
-    
-    # Estilo para a seção de controles
-    st.markdown("""
-    <style>
-    .map-controls-section {
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 1rem 0;
+    """
+    Renderiza controles de camadas de forma direta e visível usando colunas.
+    """
+    st.markdown("---")
+    st.markdown("##### 🗺️ Camadas de Referência")
+
+    # Mapeamento de nomes de exibição para chaves internas
+    AVAILABLE_LAYERS = {
+        # Coluna 1
+        "🗺️ Limite de São Paulo": "limite_sp",
+        "🏛️ Regiões Administrativas": "regioes_admin",
+        "🏙️ Áreas Urbanas": "areas_urbanas",
+        "🚗 Rodovias Estaduais": "rodovias_estaduais",
+        # Coluna 2
+        "🔵 Gasodutos (Transporte)": "gasodutos_transporte",
+        "⚪ Gasodutos (Distribuição)": "gasodutos_distribuicao",
+        "🏭 Usinas de Biogás": "plantas_biogas",
     }
-    .control-section-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #2c3e50;
-        margin-bottom: 0.75rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid #dee2e6;
-    }
-    </style>
-    """, unsafe_allow_html=True)
     
-    st.markdown('<div class="control-section-title">🗺️ Camadas Adicionais</div>', unsafe_allow_html=True)
+    # Dividir as chaves para as colunas
+    keys = list(AVAILABLE_LAYERS.keys())
+    col1_keys = keys[:4]
+    col2_keys = keys[4:]
+
+    layer_controls = {}
     
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.markdown("**Selecione camadas:**")
-        layer_options = st.multiselect(
-            "Escolha as camadas para exibir:",
-            options=[
-                "🏭 Plantas de Biogás Existentes",
-                "🏛️ Regiões Administrativas", 
-                "🗺️ Limite de São Paulo",
-                "🌾 Áreas Agrícolas",
-            ],
-            default=[],
-            key="map_layer_selector_below_map"
-        )
+        for display_name in col1_keys:
+            internal_key = AVAILABLE_LAYERS[display_name]
+            # Usar estado atual da sessão como valor padrão
+            current_value = st.session_state.get('layer_controls_state', {}).get(internal_key, False)
+            layer_controls[internal_key] = st.checkbox(display_name, value=current_value, key=f"cb_{internal_key}")
     
     with col2:
-        st.markdown("**📊 Status:**")
-        display_count = len(municipios_data[municipios_data['display_value'] > 0]) if 'display_value' in municipios_data.columns else len(municipios_data)
-        st.info(f"🎯 **Exibindo:** {len(municipios_data)} municípios ({display_count} com potencial)")
+        for display_name in col2_keys:
+            internal_key = AVAILABLE_LAYERS[display_name]
+            # Usar estado atual da sessão como valor padrão
+            current_value = st.session_state.get('layer_controls_state', {}).get(internal_key, False)
+            layer_controls[internal_key] = st.checkbox(display_name, value=current_value, key=f"cb_{internal_key}")
     
-    # Converter multiselect para o formato esperado
-    layer_mapping = {
-        "🏭 Plantas de Biogás Existentes": "plantas_biogas",
-        "🏛️ Regiões Administrativas": "regioes_admin",
-        "🗺️ Limite de São Paulo": "limite_sp",
-    }
+    # Status info
+    display_count = len(municipios_data[municipios_data['display_value'] > 0]) if 'display_value' in municipios_data.columns else len(municipios_data)
+    active_count = sum(1 for active in layer_controls.values() if active)
     
-    return {
-        'selected_layers': layer_options,
-        'layer_controls': {layer_mapping.get(layer, False): layer in layer_options for layer in layer_mapping}
-    }
+    if active_count > 0:
+        st.info(f"📊 **{len(municipios_data)} municípios** | **{active_count} camadas ativas**")
+    else:
+        st.info(f"📊 **{len(municipios_data)} municípios** | **Nenhuma camada selecionada**")
+            
+    return {'layer_controls': layer_controls}
 
 
 def render_layer_controls() -> Dict[str, bool]:
@@ -695,10 +707,6 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
     is_pre_filtered = filters and filters.get('pre_filtered', False)
     
     
-    # Controles movidos para depois do mapa - apenas definir variáveis padrão
-    layer_options = []  # Será definido depois do mapa
-    
-    # Os dados já vêm pré-filtrados do dashboard, apenas usar diretamente
     # Carregar shapefile principal
     gdf = load_and_process_shapefile()
     
@@ -706,142 +714,72 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
         st.error("Não foi possível carregar o mapa")
         return
     
-    # Processar camadas adicionais
+    # Processar camadas adicionais baseado nos controles recebidos
     additional_layers = {}
-    if layer_options:
+    if layer_controls:
         with st.spinner("Carregando camadas adicionais..."):
-            layer_mapping = {
-                "🏭 Plantas de Biogás Existentes": "plantas_biogas",
-                "🏛️ Regiões Administrativas": "regioes_admin",
-                "🗺️ Limite de São Paulo": "limite_sp",
-            }
-            
             shapefile_layers = load_additional_shapefiles()
-            for layer_name in layer_options:
-                layer_key = layer_mapping.get(layer_name)
-                if layer_key and layer_key in shapefile_layers:
-                    additional_layers[layer_key] = shapefile_layers[layer_key]
+            
+            # Extrair controles do resultado da função
+            actual_controls = layer_controls.get('layer_controls', {}) if isinstance(layer_controls, dict) else layer_controls
+            
+            # Mapear diretamente os controles para as camadas
+            active_layers = []
+            for control_key, is_enabled in actual_controls.items():
+                if is_enabled and control_key in shapefile_layers:
+                    additional_layers[control_key] = shapefile_layers[control_key]
+                    layer_name_map = {
+                        'plantas_biogas': '🏭 Plantas de Biogás Existentes',
+                        'regioes_admin': '🏛️ Regiões Administrativas', 
+                        'limite_sp': '🗺️ Limite de São Paulo'
+                    }
+                    active_layers.append(layer_name_map.get(control_key, control_key))
+            
+            # Mostrar status das camadas ativadas (somente se houver)
+            if active_layers:
+                st.success(f"✅ Camadas ativadas: {', '.join(active_layers)}")
+    
+    # --- INÍCIO DA CORREÇÃO NA LÓGICA DE JUNÇÃO ---
 
-    # Camadas carregadas silenciosamente
+    # 1. Preparar os dados para a junção
+    # Garantir que a chave de junção ('cd_mun') seja do mesmo tipo em ambos os DataFrames (string)
+    gdf['cd_mun'] = gdf['cd_mun'].astype(str)
+    municipios_data['cd_mun'] = municipios_data['cd_mun'].astype(str)
     
-    # Processar dados pré-filtrados do dashboard
-    if hasattr(municipios_data, 'to_dict'):
-        municipios_dict = municipios_data.set_index('cd_mun').to_dict('index')
-    else:
-        municipios_dict = {str(m.get('cd_mun', m.get('CD_MUN'))): m for m in municipios_data}
+    # Selecionar apenas as colunas necessárias do shapefile para evitar conflitos
+    # Mantemos a geometria e o nome do município originais
+    gdf_base = gdf[['cd_mun', 'NM_MUN', 'geometry', 'centroid', 'lat', 'lon', 'area_km2']].copy()
+
+    # 2. Realizar a junção (Merge)
+    # Usamos 'left' merge para manter todos os municípios do shapefile e adicionar os dados
+    # do dashboard onde houver correspondência de 'cd_mun'.
+    gdf_filtered = gdf_base.merge(
+        municipios_data,
+        on='cd_mun',
+        how='left'  # Mantém todos os municípios do shapefile
+    )
+
+    # 3. Tratar valores nulos após a junção
+    # Para municípios que não tinham dados no dashboard, as colunas ficarão com NaN (Not a Number).
+    # Vamos preencher com 0 para evitar erros no mapa.
+    colunas_de_dados = municipios_data.columns.drop('cd_mun')  # Pega todas as colunas de dados
+    for col in colunas_de_dados:
+        if col in gdf_filtered.columns:
+            gdf_filtered[col] = gdf_filtered[col].fillna(0)
+
+    # 4. Garantir que a coluna de nome final seja a do shapefile
+    # Criamos 'nm_mun' explicitamente a partir de 'NM_MUN' para uso no restante do código
+    gdf_filtered['nm_mun'] = gdf_filtered['NM_MUN']
     
-    # Junção shapefile + dados pré-filtrados
-    gdf_filtered = gdf.copy()
-    
-    # Transferir dados do SQLite para o GeoDataFrame
-    for idx, row in gdf_filtered.iterrows():
-        cd_mun = row['cd_mun']
-        if cd_mun in municipios_dict:
-            sqlite_data = municipios_dict[cd_mun]
-            # Atualizar todas as colunas dos dados filtrados
-            for col in municipios_data.columns:
-                if col in sqlite_data and col != 'cd_mun':
-                    try:
-                        value = float(sqlite_data[col] or 0)
-                        gdf_filtered.at[idx, col] = value
-                    except (ValueError, TypeError):
-                        gdf_filtered.at[idx, col] = 0
-    
-    # Aplicar filtro de municípios selecionados
+    # Aplicar filtro de municípios selecionados (se houver)
     if selected_municipios:
         gdf_filtered = gdf_filtered[gdf_filtered['cd_mun'].isin(selected_municipios)]
     
     # Filtrar apenas os municípios que estão nos dados pré-filtrados
-    municipios_filtrados_ids = municipios_data['cd_mun'].astype(str).tolist()
+    municipios_filtrados_ids = municipios_data['cd_mun'].tolist()
     gdf_filtered = gdf_filtered[gdf_filtered['cd_mun'].isin(municipios_filtrados_ids)]
-    
-    # Garantir que display_value existe no GeoDataFrame
-    if 'display_value' not in gdf_filtered.columns and 'display_value' in municipios_data.columns:
-        gdf_filtered = gdf_filtered.merge(
-            municipios_data[['cd_mun', 'display_value']], 
-            left_on='cd_mun', 
-            right_on='cd_mun', 
-            how='left'
-        )
-        gdf_filtered['display_value'] = gdf_filtered['display_value'].fillna(0)
-    
-    # Verificar compatibilidade de códigos automaticamente
-    shapefile_ids = set(gdf['cd_mun'].astype(str))
-    data_ids = set(municipios_data['cd_mun'].astype(str))
-    intersection = shapefile_ids.intersection(data_ids)
-    
-    if len(intersection) == 0:
-        
-        # Corrigir formato dos códigos - remover .0 dos dados
-        gdf_filtered = gdf.copy()
-        municipios_data_copy = municipios_data.copy()
-        
-        # Normalizar códigos para string sem .0
-        gdf_filtered['cd_mun_clean'] = gdf_filtered['cd_mun'].astype(str).str.replace('.0', '')
-        municipios_data_copy['cd_mun_clean'] = municipios_data_copy['cd_mun'].astype(str).str.replace('.0', '')
-        
-        # Verificar match após limpeza
-        clean_intersection = set(gdf_filtered['cd_mun_clean']).intersection(set(municipios_data_copy['cd_mun_clean']))
-        
-        # Merge com códigos limpos e resolver conflitos de colunas
-        gdf_filtered = gdf_filtered.merge(
-            municipios_data_copy,
-            left_on='cd_mun_clean',
-            right_on='cd_mun_clean',
-            how='inner',
-            suffixes=('_shp', '_data')
-        )
-        
-        # Resolver conflitos de colunas comuns e garantir colunas essenciais
-        if 'cd_mun_data' in gdf_filtered.columns and 'cd_mun_shp' in gdf_filtered.columns:
-            gdf_filtered['cd_mun'] = gdf_filtered['cd_mun_shp']  # Manter o do shapefile
-        
-        if 'nm_mun_data' in gdf_filtered.columns and 'nm_mun_shp' in gdf_filtered.columns:
-            gdf_filtered['nm_mun'] = gdf_filtered['nm_mun_shp']  # Manter o do shapefile
-        elif 'nm_mun_data' in gdf_filtered.columns:
-            gdf_filtered['nm_mun'] = gdf_filtered['nm_mun_data']
-        elif 'nm_mun_shp' in gdf_filtered.columns:
-            gdf_filtered['nm_mun'] = gdf_filtered['nm_mun_shp']
-        
-        # Garantir que colunas essenciais existam usando dados da origem correta
-        essential_columns = ['total_final_nm_ano', 'total_agricola_nm_ano', 'total_pecuaria_nm_ano', 'display_value']
-        for col in essential_columns:
-            if col not in gdf_filtered.columns:
-                # Tentar pegar da versão _data primeiro, depois _shp
-                if f'{col}_data' in gdf_filtered.columns:
-                    gdf_filtered[col] = gdf_filtered[f'{col}_data']
-                elif f'{col}_shp' in gdf_filtered.columns:
-                    gdf_filtered[col] = gdf_filtered[f'{col}_shp']
-                else:
-                    # Se não existir, criar com zeros
-                    gdf_filtered[col] = 0.0
-        
-        # Garantir que lat/lon existam
-        if 'lat' not in gdf_filtered.columns or 'lon' not in gdf_filtered.columns:
-            if 'geometry' in gdf_filtered.columns:
-                gdf_filtered['centroid'] = gdf_filtered.geometry.centroid
-                gdf_filtered['lat'] = gdf_filtered['centroid'].y
-                gdf_filtered['lon'] = gdf_filtered['centroid'].x
-        
-    
-    # Verificação final das colunas essenciais (silenciosa)
-    required_cols = ['nm_mun', 'cd_mun', 'total_final_nm_ano', 'display_value', 'lat', 'lon', 'geometry']
-    missing_cols = [col for col in required_cols if col not in gdf_filtered.columns]
-    
-    if missing_cols:
-        # Criar colunas em falta com valores padrão silenciosamente
-        for col in missing_cols:
-            if col in ['lat', 'lon']:
-                if 'geometry' in gdf_filtered.columns:
-                    centroids = gdf_filtered.geometry.centroid
-                    if col == 'lat':
-                        gdf_filtered['lat'] = centroids.y
-                    else:
-                        gdf_filtered['lon'] = centroids.x
-                else:
-                    gdf_filtered[col] = 0.0
-            else:
-                gdf_filtered[col] = 0.0 if col not in ['nm_mun', 'cd_mun'] else 'Unknown'
+
+    # --- FIM DA CORREÇÃO NA LÓGICA DE JUNÇÃO ---
     
     # Criar e renderizar mapa com dados pré-filtrados
     try:
@@ -865,7 +803,8 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
             import hashlib
             
             # Criar hash baseado nos dados filtrados
-            data_signature = f"{len(municipios_data)}_{len(layer_options)}_{fullscreen_mode}"
+            active_layers_count = len(additional_layers) if additional_layers else 0
+            data_signature = f"{len(municipios_data)}_{active_layers_count}_{fullscreen_mode}"
             map_key = f"biogas_map_{hashlib.md5(data_signature.encode()).hexdigest()[:8]}"
             
             # CSS adicional para fullscreen
