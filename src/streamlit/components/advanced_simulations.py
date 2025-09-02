@@ -19,6 +19,13 @@ try:
 except ImportError:
     GEOPY_AVAILABLE = False
 
+# Import geographic analysis utilities
+try:
+    from utils.geographic_analysis import create_geographic_analyzer
+    GEOGRAPHIC_ANALYSIS_AVAILABLE = True
+except ImportError:
+    GEOGRAPHIC_ANALYSIS_AVAILABLE = False
+
 
 # Substrate Combination Database based on research literature
 SUBSTRATE_COMBINATIONS = {
@@ -278,38 +285,294 @@ class AdvancedSimulationsComponent:
         
         if st.button("🔍 Detectar Hotspots", type="primary"):
             
-            if not GEOPY_AVAILABLE:
-                st.warning("⚠️ Análise geográfica simplificada (geopy não disponível). Para análise precisa, instale: `pip install geopy`")
+            if not GEOGRAPHIC_ANALYSIS_AVAILABLE:
+                st.error("❌ Análise geográfica não disponível. Verifique os arquivos de shapefile.")
+                return
             
-            with st.spinner("Analisando proximidade entre municípios..."):
+            with st.spinner("Analisando proximidade entre municípios usando coordenadas reais..."):
                 
-                # Filter municipalities with sufficient potential
-                potential_df = df[df['total_final_nm_ano'] >= (min_potential * 1_000_000)].copy()
+                # Initialize geographic analyzer
+                geo_analyzer = create_geographic_analyzer()
                 
-                if potential_df.empty:
-                    st.warning("❌ Nenhum município atende aos critérios de potencial mínimo")
-                    return
-                
-                # Detect hotspots
-                hotspots = self.detect_municipality_hotspots(
-                    potential_df, 
+                # Detect hotspots using real geographic analysis
+                hotspots = geo_analyzer.detect_geographic_hotspots(
+                    df, 
                     radius_km, 
-                    min_cluster_size
+                    min_cluster_size,
+                    min_potential * 1_000_000
                 )
                 
                 if not hotspots:
                     st.warning("❌ Nenhum hotspot detectado com os parâmetros selecionados")
+                    st.info("💡 Tente aumentar o raio de análise ou diminuir o potencial mínimo")
                     return
                 
                 # Display results
-                st.success(f"✅ {len(hotspots)} hotspots detectados!")
+                st.success(f"✅ {len(hotspots)} hotspots geográficos detectados usando coordenadas reais!")
                 
                 # Hotspot analysis
-                self.display_hotspot_analysis(hotspots, df)
+                self.display_real_hotspot_analysis(hotspots, geo_analyzer)
                 
                 # Interactive map
-                self.render_hotspot_map(hotspots, df)
+                self.render_real_hotspot_map(hotspots, geo_analyzer)
     
+    def display_real_hotspot_analysis(self, hotspots: List[Dict], geo_analyzer) -> None:
+        """Display detailed analysis of detected hotspots using real geographic data"""
+        
+        # Summary metrics
+        total_hotspot_potential = sum(h['total_potential'] for h in hotspots)
+        total_municipalities = sum(h['municipality_count'] for h in hotspots)
+        avg_synergy = np.mean([h['synergy_score'] for h in hotspots])
+        avg_radius = np.mean([h['cluster_radius'] for h in hotspots])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("🎯 Hotspots Reais", len(hotspots))
+        with col2:
+            st.metric("🏛️ Municípios", total_municipalities)
+        with col3:
+            st.metric("⚡ Potencial Total", f"{total_hotspot_potential/1_000_000:.1f}M Nm³/ano")
+        with col4:
+            st.metric("📏 Raio Médio", f"{avg_radius:.1f} km")
+        
+        # Additional metrics
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("🤝 Sinergia Média", f"{avg_synergy:.0%}")
+        with col2:
+            best_hotspot = max(hotspots, key=lambda x: x['synergy_score'])
+            st.metric("🌟 Melhor Sinergia", f"{best_hotspot['synergy_score']:.0%}", 
+                     delta=f"Centro: {best_hotspot['center']}")
+        
+        # Detailed hotspot information
+        st.markdown("### 🎯 Análise Detalhada dos Hotspots")
+        
+        for i, hotspot in enumerate(hotspots):
+            
+            with st.expander(
+                f"**Hotspot #{hotspot['id']} - {hotspot['center']}** "
+                f"({hotspot['municipality_count']} municípios em {hotspot['cluster_radius']:.1f}km)", 
+                expanded=(i < 2)
+            ):
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("**🏛️ Municípios no Cluster:**")
+                    for j, mun in enumerate(hotspot['municipalities']):
+                        if j == 0:
+                            st.markdown(f"• **{mun}** (centro)")
+                        else:
+                            # Find distance for this municipality
+                            mun_data = next((m for m in hotspot['municipality_data'] if m['municipality'] == mun), None)
+                            if mun_data:
+                                st.markdown(f"• {mun} ({mun_data['distance_km']:.1f}km)")
+                            else:
+                                st.markdown(f"• {mun}")
+                
+                with col2:
+                    st.markdown("**🌾 Resíduos Dominantes:**")
+                    for residue in hotspot['dominant_residues']:
+                        st.markdown(f"• {residue}")
+                    
+                    st.markdown("**📊 Métricas:**")
+                    st.markdown(f"• Potencial Médio: {hotspot['avg_potential']/1_000_000:.1f}M Nm³/ano")
+                    st.markdown(f"• Score de Sinergia: {hotspot['synergy_score']:.1%}")
+                
+                with col3:
+                    st.metric(
+                        "Potencial Total",
+                        f"{hotspot['total_potential']/1_000_000:.1f}M Nm³/ano"
+                    )
+                    
+                    # Show cluster visualization
+                    if st.button(f"📍 Ver Cluster {hotspot['id']} no Mapa", key=f"map_{hotspot['id']}"):
+                        self.show_cluster_detail_map(hotspot, geo_analyzer)
+                
+                # Suggested combinations for this hotspot
+                self.suggest_hotspot_combinations_real(hotspot)
+    
+    def suggest_hotspot_combinations_real(self, hotspot: Dict) -> None:
+        """Suggest optimal substrate combinations for a real geographic hotspot"""
+        
+        dominant_residues = hotspot['dominant_residues']
+        
+        if len(dominant_residues) < 2:
+            st.info("💭 Adicione mais tipos de resíduos para sugestões de combinação")
+            return
+        
+        st.markdown("**💡 Combinações Recomendadas:**")
+        
+        # Check for research-backed combinations
+        found_combinations = []
+        
+        # Map residue names to database columns for matching
+        residue_mapping = {
+            'Cana': 'biogas_cana_nm_ano',
+            'Soja': 'biogas_soja_nm_ano', 
+            'Milho': 'biogas_milho_nm_ano',
+            'Bovino': 'biogas_bovinos_nm_ano',
+            'Suíno': 'biogas_suino_nm_ano',
+            'Aves': 'biogas_aves_nm_ano',
+            'Citros': 'biogas_citros_nm_ano',
+            'Café': 'biogas_cafe_nm_ano',
+            'Peixes': 'biogas_piscicultura_nm_ano'
+        }
+        
+        # Check all combination categories
+        for category, combinations in self.combinations.items():
+            for combo in combinations:
+                primary_residue = next((k for k, v in residue_mapping.items() if v == combo['primary']), None)
+                secondary_residue = next((k for k, v in residue_mapping.items() if v == combo['secondary']), None)
+                
+                if primary_residue in dominant_residues and secondary_residue in dominant_residues:
+                    found_combinations.append((category, combo))
+        
+        if found_combinations:
+            for category, combo in found_combinations[:3]:  # Show top 3
+                category_icon = {
+                    'highly_recommended': '🌟',
+                    'recommended': '👍', 
+                    'essential': '⚠️'
+                }[category]
+                
+                st.markdown(f"{category_icon} **{combo['name']}** - Ganho: +{combo['efficiency_gain']}%")
+                st.markdown(f"   *{combo['benefits']}*")
+        
+        # Geographic advantage note
+        avg_distance = np.mean([m['distance_km'] for m in hotspot['municipality_data'][1:]])
+        if avg_distance < 30:
+            st.success("🚛 **Vantagem Logística**: Municípios muito próximos facilitam transporte de resíduos")
+        elif avg_distance < 50:
+            st.info("🛣️ **Logística Viável**: Distâncias moderadas permitem cooperação intermunicipal")
+    
+    def show_cluster_detail_map(self, hotspot: Dict, geo_analyzer) -> None:
+        """Show detailed map for a specific cluster"""
+        
+        st.markdown(f"#### 🗺️ Mapa Detalhado - Hotspot #{hotspot['id']}")
+        
+        # Get map data for this cluster
+        map_data = geo_analyzer.get_cluster_map_data(hotspot)
+        
+        if map_data.empty:
+            st.warning("❌ Dados de mapeamento não disponíveis")
+            return
+        
+        # Create scatter map
+        fig = px.scatter_mapbox(
+            map_data,
+            lat='lat',
+            lng='lng', 
+            size='size',
+            color='biogas_potential',
+            hover_name='municipality',
+            hover_data={
+                'distance_km': ':.1f',
+                'biogas_potential': ':,.0f'
+            },
+            title=f"Cluster {hotspot['center']} - {len(map_data)} Municípios",
+            mapbox_style="open-street-map",
+            height=400
+        )
+        
+        fig.update_layout(
+            mapbox=dict(
+                center=dict(
+                    lat=map_data['lat'].mean(),
+                    lon=map_data['lng'].mean()
+                ),
+                zoom=8
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Data table
+        st.markdown("**📋 Dados do Cluster:**")
+        display_data = map_data[['municipality', 'distance_km', 'biogas_potential']].copy()
+        display_data['biogas_potential'] = display_data['biogas_potential'] / 1_000_000
+        display_data.columns = ['Município', 'Distância (km)', 'Potencial (M Nm³/ano)']
+        st.dataframe(display_data, use_container_width=True)
+    
+    def render_real_hotspot_map(self, hotspots: List[Dict], geo_analyzer) -> None:
+        """Render interactive map of real detected hotspots"""
+        
+        st.markdown("### 🗺️ Mapa de Hotspots Geográficos")
+        
+        # Prepare data for all hotspots
+        all_municipalities = []
+        
+        for hotspot in hotspots:
+            for mun_data in hotspot['municipality_data']:
+                coords = mun_data['coordinates']
+                all_municipalities.append({
+                    'municipality': mun_data['municipality'],
+                    'lat': coords[0],
+                    'lng': coords[1],
+                    'hotspot_id': hotspot['id'],
+                    'hotspot_center': hotspot['center'],
+                    'biogas_potential': mun_data['biogas_potential'],
+                    'distance_from_center': mun_data['distance_km'],
+                    'synergy_score': hotspot['synergy_score'],
+                    'size': min(mun_data['biogas_potential'] / 1_000_000 * 10, 50)
+                })
+        
+        if not all_municipalities:
+            st.warning("❌ Nenhum dado de mapeamento disponível")
+            return
+        
+        map_df = pd.DataFrame(all_municipalities)
+        
+        # Create interactive map
+        fig = px.scatter_mapbox(
+            map_df,
+            lat='lat',
+            lng='lng',
+            size='size',
+            color='hotspot_id',
+            hover_name='municipality',
+            hover_data={
+                'hotspot_center': True,
+                'distance_from_center': ':.1f',
+                'biogas_potential': ':,.0f',
+                'synergy_score': ':.1%'
+            },
+            title=f"Hotspots Geográficos Detectados - {len(hotspots)} Clusters",
+            mapbox_style="open-street-map",
+            height=600,
+            color_continuous_scale="Viridis"
+        )
+        
+        # Center map on São Paulo state
+        fig.update_layout(
+            mapbox=dict(
+                center=dict(lat=-22.5, lon=-48.5),
+                zoom=6
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Summary table
+        st.markdown("### 📊 Resumo dos Hotspots")
+        
+        summary_data = []
+        for hotspot in hotspots:
+            summary_data.append({
+                'ID': hotspot['id'],
+                'Centro': hotspot['center'],
+                'Municípios': hotspot['municipality_count'],
+                'Raio (km)': round(hotspot['cluster_radius'], 1),
+                'Potencial (M Nm³/ano)': round(hotspot['total_potential'] / 1_000_000, 1),
+                'Sinergia': f"{hotspot['synergy_score']:.1%}",
+                'Resíduos': ', '.join(hotspot['dominant_residues'][:2])
+            })
+        
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True)
+
     def detect_municipality_hotspots(self, df: pd.DataFrame, radius_km: int, min_size: int) -> List[Dict]:
         """Detect geographic clusters of municipalities with complementary residues"""
         
