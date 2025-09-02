@@ -66,13 +66,11 @@ def list_municipios(limit: int = 1000, filters: Optional[Dict[str, Any]] = None)
         cur = conn.execute(sql, params)
         return [dict(row) for row in cur.fetchall()]
 
-
 def get_municipio_by_cd(cd_mun: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         cur = conn.execute("SELECT * FROM municipios WHERE cd_mun = ?", (cd_mun,))
         row = cur.fetchone()
         return dict(row) if row else None
-
 
 def upsert_fator(
     nome_residuo: str,

@@ -2,6 +2,13 @@ from typing import Dict, Any
 import pandas as pd
 import streamlit as st
 
+# Import scientific references system
+try:
+    from utils.scientific_references import get_reference_manager, show_reference_button
+    REFERENCES_AVAILABLE = True
+except ImportError:
+    REFERENCES_AVAILABLE = False
+
 
 def calculate_biogas_potential(residuos: float, fator: float) -> float:
     """
@@ -35,6 +42,22 @@ def recompute_total_by_sources(m_row: Dict[str, float], enabled_sources: Dict[st
             total += float(m_row.get(s, 0) or 0)
     return total
 
+
+# Scientific reference mapping for conversion factors
+CONVERSION_FACTOR_REFERENCES = {
+    'biogas_cana_nm_ano': ['darwin_2017', 'silva_2017', 'moraes_2015', 'melo_2024'],  # Sugarcane bagasse and vinasse
+    'biogas_soja_nm_ano': ['zhu_2017', 'murphy_2011'],  # Soybean straw  
+    'biogas_milho_nm_ano': ['stachowiak_2019', 'ona_2019', 'zhang_2022', 'khan_2024', 'zhu_2010', 'murphy_2011'],  # Corn residues
+    'biogas_cafe_nm_ano': ['paes_2023', 'passos_2018', 'czekala_2023', 'braojos_2024', 'murphy_2011'],  # Coffee residues
+    'biogas_citros_nm_ano': ['serrano_2014', 'szaja_2020', 'jiang_2020', 'diniso_2024', 'murphy_2011'],  # Citrus residues
+    'biogas_bovinos_nm_ano': ['darwin_2017', 'paes_2023', 'ona_2019', 'matinc_2017_detailed'],  # Cattle manure
+    'biogas_suino_nm_ano': ['matinc_2017', 'matinc_2017_detailed', 'souza_2008'],  # Swine manure
+    'biogas_aves_nm_ano': ['ona_2019'],  # Poultry manure
+    'biogas_piscicultura_nm_ano': ['estevez_2019', 'braganca_2023', 'ingabire_2023', 'kafle_2012'],  # Fish farming residues
+    'silvicultura_nm_ano': ['musa_2021', 'morales_2021', 'zhang_2015', 'xu_2019'],  # Forestry residues
+    'rsu_potencial_nm_habitante_ano': ['prabhu_2016', 'jiang_2020'],  # Municipal solid waste
+    'rpo_potencial_nm_habitante_ano': ['bella_2022', 'prabhu_2016']  # Organic waste
+}
 
 # Fatores de conversão padrão para diferentes cenários
 DEFAULT_CONVERSION_FACTORS = {
@@ -89,9 +112,91 @@ BIOGAS_SOURCE_LABELS = {
     'biogas_suino_nm_ano': '🐷 Suínos',
     'biogas_aves_nm_ano': '🐔 Aves',
     'biogas_piscicultura_nm_ano': '🐟 Piscicultura',
+    'silvicultura_nm_ano': '🌲 Silvicultura',
     'rsu_potencial_nm_habitante_ano': '🗑️ RSU (por hab.)',
     'rpo_potencial_nm_habitante_ano': '🌳 RPO (por hab.)'
 }
+
+
+def render_conversion_factor_with_references(source: str, factor: float, scenario: str = "realista") -> None:
+    """Render a conversion factor with its scientific references"""
+    
+    if not REFERENCES_AVAILABLE:
+        st.metric(BIOGAS_SOURCE_LABELS.get(source, source), f"{factor} m³/ton")
+        return
+    
+    # Get references for this source
+    references = CONVERSION_FACTOR_REFERENCES.get(source, [])
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.metric(BIOGAS_SOURCE_LABELS.get(source, source), f"{factor} m³/ton")
+    
+    with col2:
+        if references:
+            # Show primary reference button
+            primary_ref = references[0]
+            show_reference_button(
+                primary_ref, 
+                "📖 Source", 
+                key=f"factor_{source}_{scenario}"
+            )
+            
+            # Show additional references if available
+            if len(references) > 1:
+                with st.expander("More References", expanded=False):
+                    for i, ref_id in enumerate(references[1:], 1):
+                        show_reference_button(
+                            ref_id,
+                            f"📖 Ref {i+1}",
+                            key=f"factor_{source}_{scenario}_{i}"
+                        )
+        else:
+            st.caption("📚 Ref. pending")
+
+
+def show_all_references_for_source(source: str) -> None:
+    """Show all scientific references for a specific biogas source"""
+    
+    if not REFERENCES_AVAILABLE:
+        st.info("Scientific references system not available")
+        return
+    
+    references = CONVERSION_FACTOR_REFERENCES.get(source, [])
+    source_label = BIOGAS_SOURCE_LABELS.get(source, source)
+    
+    st.markdown(f"### 📚 Scientific References for {source_label}")
+    
+    if not references:
+        st.info("No specific references available for this source yet")
+        return
+    
+    ref_manager = get_reference_manager()
+    
+    for ref_id in references:
+        ref = ref_manager.get_reference(ref_id)
+        if ref:
+            with st.expander(f"{ref.authors.split(',')[0]} et al. ({ref.year})", expanded=False):
+                ref_manager.show_reference_modal(ref)
+        else:
+            st.error(f"Reference not found: {ref_id}")
+
+
+def render_scientific_references_summary() -> None:
+    """Render a summary of all scientific references used in the system"""
+    
+    if not REFERENCES_AVAILABLE:
+        st.error("Scientific references system not available")
+        return
+    
+    ref_manager = get_reference_manager()
+    
+    st.title("📚 Scientific References - CP2B Biogas System")
+    st.markdown("Complete scientific bibliography supporting biogas conversion factors and substrate combinations")
+    
+    # Render the complete references page
+    ref_manager.render_references_page()
 
 
 def render_scenario_simulator() -> Dict[str, Any]:

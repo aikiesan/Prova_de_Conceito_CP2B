@@ -2,7 +2,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-
 def top_municipios_bar(df: pd.DataFrame, top_n: int = 20) -> None:
     if df.empty:
         st.info("Sem dados para gráficos.")
