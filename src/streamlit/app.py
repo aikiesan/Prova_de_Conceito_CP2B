@@ -29,6 +29,7 @@ try:
     from components.tables import render_table
     from components.executive_dashboard import render_executive_dashboard
     from components.residue_analysis import render_residue_analysis_dashboard
+    from components.advanced_simulations import render_advanced_simulations_page
 except ImportError:
     # Fallback for Streamlit Cloud
     from src.streamlit.components.navigation import render_navigation_sidebar, get_page_config
@@ -39,6 +40,7 @@ except ImportError:
     from src.streamlit.components.tables import render_table
     from src.streamlit.components.executive_dashboard import render_executive_dashboard
     from src.streamlit.components.residue_analysis import render_residue_analysis_dashboard
+    from src.streamlit.components.advanced_simulations import render_advanced_simulations_page
 
 try:
     from utils.database import (
@@ -804,38 +806,46 @@ class CP2BDashboard:
                     st.rerun()
     
     def render_simulations_page(self, df: pd.DataFrame, page_config: dict) -> None:
-        """Renders the simulations page"""
+        """Renders the advanced simulations page with substrate combinations and hotspot detection"""
         
-        # Get filters from sidebar
+        # Get filters from sidebar for data filtering
         filters = render_sidebar_filters("simulations")
         filtered_df = apply_residue_filters(df, filters)
         st.session_state.filtered_count = len(filtered_df)
         
         if filtered_df.empty:
             st.warning("🔍 No data matches your current filter selection.")
+            st.info("💡 Try adjusting your filters to see simulation options.")
             return
         
-        # Quick metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("📍 Municipalities", len(filtered_df))
-        with col2:
-            total_potential = filtered_df['total_final_nm_ano'].sum()
-            st.metric("⚡ Base Potential", f"{total_potential/1_000_000:.1f}M Nm³/ano")
-        with col3:
-            st.metric("🎯 Scenario Mode", "Active")
-        
-        st.markdown("---")
-        
-        # Main simulation interface
+        # Render the advanced simulations interface
         try:
+            render_advanced_simulations_page(filtered_df)
+            
+        except Exception as e:
+            st.error(f"❌ Advanced Simulation Error: {e}")
+            
+            # Fallback to basic simulation interface
+            st.markdown("---")
+            st.warning("🔄 Fallback to Basic Simulation Mode")
+            
+            # Basic simulation fallback
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📍 Municipalities", len(filtered_df))
+            with col2:
+                total_potential = filtered_df['total_final_nm_ano'].sum()
+                st.metric("⚡ Base Potential", f"{total_potential/1_000_000:.1f}M Nm³/ano")
+            with col3:
+                st.metric("🎯 Basic Mode", "Active")
+            
+            # Basic scenario simulator
             scenario_config = render_scenario_simulator()
             
             if not filtered_df.empty:
                 scenario_df = apply_scenario_to_data(filtered_df, scenario_config)
                 
-                # Impact analysis
-                st.markdown("## 📊 Scenario Impact Analysis")
+                st.markdown("## 📊 Basic Scenario Impact")
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -851,11 +861,7 @@ class CP2BDashboard:
                         impact_percent = ((scenario_total - original_total) / original_total) * 100
                         st.metric("📊 Impact", f"{impact_percent:+.1f}%", 
                                 delta=f"{(scenario_total - original_total)/1_000_000:+.1f}M Nm³/ano")
-                
-                # Visual comparison could go here (charts, maps, etc.)
-                
-        except Exception as e:
-            st.error(f"❌ Simulation Error: {e}")
+            
             if st.session_state.get('show_debug', False):
                 st.exception(e)
     

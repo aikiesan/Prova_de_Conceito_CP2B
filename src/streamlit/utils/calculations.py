@@ -46,7 +46,7 @@ DEFAULT_CONVERSION_FACTORS = {
         'biogas_citros_nm_ano': 30.0,    # m³/ton (bagaço)
         'biogas_bovinos_nm_ano': 25.0,    # m³/ton (esterco fresco)
         'biogas_suino_nm_ano': 60.0,    # m³/ton (dejetos)
-        'biogas_aves_nm_ano': 80.0,      # m³/ton (cama de frango)
+        'biogas_aves_nm_ano': 25.0,      # m³/ton (cama de frango) - CORRECTED
         'biogas_piscicultura_nm_ano': 20.0,  # m³/ton (resíduos)
         'rsu_potencial_nm_habitante_ano': 100.0,    # m³/habitante/ano (RSU)
         'rpo_potencial_nm_habitante_ano': 50.0      # m³/habitante/ano (RPO)
@@ -59,7 +59,7 @@ DEFAULT_CONVERSION_FACTORS = {
         'biogas_citros_nm_ano': 45.0,
         'biogas_bovinos_nm_ano': 35.0,
         'biogas_suino_nm_ano': 80.0,
-        'biogas_aves_nm_ano': 100.0,
+        'biogas_aves_nm_ano': 35.0,      # m³/ton (cama de frango) - CORRECTED
         'biogas_piscicultura_nm_ano': 30.0,
         'rsu_potencial_nm_habitante_ano': 150.0,
         'rpo_potencial_nm_habitante_ano': 75.0
@@ -72,7 +72,7 @@ DEFAULT_CONVERSION_FACTORS = {
         'biogas_citros_nm_ano': 65.0,
         'biogas_bovinos_nm_ano': 50.0,
         'biogas_suino_nm_ano': 120.0,
-        'biogas_aves_nm_ano': 140.0,
+        'biogas_aves_nm_ano': 45.0,      # m³/ton (cama de frango) - CORRECTED
         'biogas_piscicultura_nm_ano': 45.0,
         'rsu_potencial_nm_habitante_ano': 200.0,
         'rpo_potencial_nm_habitante_ano': 100.0
