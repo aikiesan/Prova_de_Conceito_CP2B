@@ -17,7 +17,9 @@
       "Read(/C:\\Users\\Lucas\\Documents\\CP2B\\Dashboard_CP2B\\projeto_cp2b\\src\\streamlit/**)",
       "Read(/C:\\Users\\Lucas\\Documents\\CP2B\\Dashboard_CP2B\\projeto_cp2b\\src\\streamlit/**)",
       "Bash(streamlit run:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": []

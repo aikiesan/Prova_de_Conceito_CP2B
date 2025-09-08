@@ -2,6 +2,15 @@
 
 Este projeto é um protótipo em Streamlit para análise do potencial de biogás nos 645 municípios do estado de São Paulo. Inclui importação de dados a partir de Excel para SQLite, visualizações geoespaciais, filtros interativos e simulador de cenários.
 
+## Características Principais
+
+- 🎯 **Análise MCDA** completa com biomassa, infraestrutura e restrições
+- 🗺️ **Mapas interativos** com dados geoespaciais otimizados
+- 📊 **Scoring inteligente** para seleção de propriedades
+- 🔍 **Sistema de busca** avançado com filtros
+- 📋 **Relatórios detalhados** de propriedades
+- 📚 **Base científica** com 35+ referências acadêmicas
+
 ## Como executar
 
 1) Instalar dependências
@@ -28,3 +37,6 @@ streamlit run src/streamlit/app.py
 
 Consulte `src/` para módulos de banco, cálculos e UI. Arquivos de configuração do Streamlit em `.streamlit/config.toml`.
 
+## Documentação
+
+Ver `CP2B_MCDA_Methodology_Documentation.md` para metodologia completa e roadmap de desenvolvimento.
