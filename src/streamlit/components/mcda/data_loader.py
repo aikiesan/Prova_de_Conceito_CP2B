@@ -12,33 +12,100 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Configuração de cenários MCDA
+MCDA_SCENARIOS = {
+    '10km': 'CP2B_MCDA_10km.geoparquet',
+    '30km': 'CP2B_MCDA_30km.geoparquet', 
+    '50km': 'CP2B_MCDA_50km.geoparquet'
+}
+
 
 @st.cache_data
+def load_mcda_geoparquet_by_radius(radius: str = '30km') -> gpd.GeoDataFrame:
+    """
+    Carrega dados MCDA do arquivo GeoParquet específico do raio
+    
+    Args:
+        radius: Raio de análise ('10km', '30km', ou '50km')
+    
+    Returns:
+        gpd.GeoDataFrame: Dados com geometrias e scores MCDA processados
+    """
+    try:
+        if radius not in MCDA_SCENARIOS:
+            logger.warning(f"⚠️ Raio '{radius}' inválido. Usando '30km' como padrão.")
+            radius = '30km'
+            
+        geoparquet_filename = MCDA_SCENARIOS[radius]
+        
+        # Tenta encontrar o arquivo no diretório atual
+        current_path = Path.cwd()
+        geoparquet_path = current_path / geoparquet_filename
+        
+        if not geoparquet_path.exists():
+            logger.warning(f"⚠️ Arquivo {geoparquet_filename} não encontrado em {current_path}")
+            logger.info("🔄 Tentando carregar dados antigos como fallback...")
+            return load_cp2b_geoparquet_fallback()
+        
+        logger.info(f"🔄 Carregando GeoParquet MCDA {radius}: {geoparquet_path}")
+        gdf = gpd.read_parquet(str(geoparquet_path))
+        
+        # Validação dos dados carregados
+        if gdf.empty:
+            logger.warning(f"⚠️ Arquivo {geoparquet_filename} está vazio")
+            return load_cp2b_geoparquet_fallback()
+            
+        # Verificar se as colunas necessárias existem
+        required_cols = ['cod_imovel', 'geometry', 'municipio']
+        missing_cols = [col for col in required_cols if col not in gdf.columns]
+        if missing_cols:
+            logger.warning(f"⚠️ Colunas faltando no arquivo {geoparquet_filename}: {missing_cols}")
+            
+        logger.info(f"✅ GeoParquet MCDA {radius} carregado: {len(gdf)} propriedades")
+        logger.info(f"📊 Colunas disponíveis: {list(gdf.columns)}")
+        
+        return gdf
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar GeoParquet MCDA {radius}: {str(e)}")
+        logger.info("🔄 Tentando carregar dados antigos como fallback...")
+        return load_cp2b_geoparquet_fallback()
+
+@st.cache_data
+def load_cp2b_geoparquet_fallback() -> gpd.GeoDataFrame:
+    """
+    Função de fallback para carregar dados antigos se os novos não estiverem disponíveis
+    
+    Returns:
+        gpd.GeoDataFrame: Dados com geometrias processadas (versão antiga)
+    """
+    try:
+        # Tenta carregar o arquivo antigo
+        current_path = Path.cwd()
+        old_geoparquet_path = current_path / "CP2B_Processed_Geometries.geoparquet"
+        
+        if old_geoparquet_path.exists():
+            logger.info(f"🔄 Carregando GeoParquet antigo como fallback: {old_geoparquet_path}")
+            gdf = gpd.read_parquet(str(old_geoparquet_path))
+            logger.info(f"✅ GeoParquet antigo carregado: {len(gdf)} propriedades")
+            return gdf
+        else:
+            logger.error("❌ Nenhum arquivo GeoParquet encontrado")
+            return gpd.GeoDataFrame()
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar fallback: {str(e)}")
+        return gpd.GeoDataFrame()
+
+@st.cache_data  
 def load_cp2b_geoparquet() -> gpd.GeoDataFrame:
     """
-    Carrega dados CP2B do arquivo GeoParquet otimizado
+    Função mantida para compatibilidade - agora chama a nova função
     
     Returns:
         gpd.GeoDataFrame: Dados com geometrias processadas
     """
-    try:
-        geoparquet_path = f"{CP2B_DATA_PATH}/CP2B_Processed_Geometries.geoparquet"
-        
-        if not os.path.exists(geoparquet_path):
-            logger.warning(f"⚠️ GeoParquet não encontrado em {geoparquet_path}")
-            logger.info("🔄 Tentando carregar dados do CSV como fallback...")
-            return load_cp2b_complete_database()
-        
-        logger.info(f"🔄 Carregando GeoParquet otimizado: {geoparquet_path}")
-        gdf = gpd.read_parquet(geoparquet_path)
-        
-        logger.info(f"✅ GeoParquet carregado: {len(gdf)} propriedades com geometrias")
-        return gdf
-        
-    except Exception as e:
-        logger.error(f"❌ Erro ao carregar GeoParquet: {str(e)}")
-        logger.info("🔄 Tentando carregar dados do CSV como fallback...")
-        return load_cp2b_complete_database()
+    return load_mcda_geoparquet_by_radius('30km')
 
 @st.cache_data
 def load_cp2b_complete_database() -> pd.DataFrame:
@@ -136,40 +203,75 @@ def get_property_details(cod_imovel: str) -> Optional[Dict[str, Any]]:
         logger.error(f"❌ Erro ao buscar propriedade {cod_imovel}: {str(e)}")
         return None
 
-def get_cp2b_summary_stats() -> Dict[str, Any]:
+def get_mcda_summary_stats_by_radius(radius: str = '30km') -> Dict[str, Any]:
     """
-    Retorna estatísticas resumo dos dados CP2B
+    Retorna estatísticas resumo dos dados MCDA por raio
+    
+    Args:
+        radius: Raio de análise ('10km', '30km', ou '50km')
     
     Returns:
-        Dict com estatísticas do projeto CP2B
+        Dict com estatísticas do cenário MCDA específico
     """
     try:
-        df = load_cp2b_complete_database()
+        gdf = load_mcda_geoparquet_by_radius(radius)
         
-        if df.empty:
+        if gdf.empty:
             return {
+                'radius': radius,
                 'total_properties': 0,
                 'municipalities': 0,
                 'avg_score': 0,
                 'max_score': 0,
+                'viable_properties': 0,
+                'excellent_properties': 0,
                 'status': 'error'
             }
         
+        # Calcular scores se existirem
+        avg_score = 0
+        max_score = 0
+        min_score = 0
+        viable_count = 0
+        excellent_count = 0
+        
+        if 'mcda_score' in gdf.columns:
+            avg_score = gdf['mcda_score'].mean()
+            max_score = gdf['mcda_score'].max()
+            min_score = gdf['mcda_score'].min()
+            viable_count = len(gdf[gdf['mcda_score'] > 60])
+            excellent_count = len(gdf[gdf['mcda_score'] > 80])
+        
         stats = {
-            'total_properties': len(df),
-            'municipalities': df['municipio'].nunique() if 'municipio' in df.columns else 0,
-            'avg_score': df['mcda_score'].mean() if 'mcda_score' in df.columns else 0,
-            'max_score': df['mcda_score'].max() if 'mcda_score' in df.columns else 0,
-            'min_score': df['mcda_score'].min() if 'mcda_score' in df.columns else 0,
-            'top_municipalities': df['municipio'].value_counts().head(5).to_dict() if 'municipio' in df.columns else {},
+            'radius': radius,
+            'total_properties': len(gdf),
+            'municipalities': gdf['municipio'].nunique() if 'municipio' in gdf.columns else 0,
+            'avg_score': round(avg_score, 1),
+            'max_score': round(max_score, 1),
+            'min_score': round(min_score, 1),
+            'viable_properties': viable_count,
+            'excellent_properties': excellent_count,
+            'viable_percentage': round((viable_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            'excellent_percentage': round((excellent_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            'top_municipalities': gdf['municipio'].value_counts().head(5).to_dict() if 'municipio' in gdf.columns else {},
             'status': 'success'
         }
         
+        logger.info(f"✅ Estatísticas MCDA {radius}: {stats['total_properties']} propriedades, {stats['viable_properties']} viáveis")
         return stats
         
     except Exception as e:
-        logger.error(f"❌ Erro ao calcular estatísticas CP2B: {str(e)}")
-        return {'status': 'error', 'error': str(e)}
+        logger.error(f"❌ Erro ao calcular estatísticas MCDA {radius}: {str(e)}")
+        return {'status': 'error', 'error': str(e), 'radius': radius}
+
+def get_cp2b_summary_stats() -> Dict[str, Any]:
+    """
+    Função mantida para compatibilidade - agora retorna estatísticas do cenário 30km
+    
+    Returns:
+        Dict com estatísticas do projeto CP2B
+    """
+    return get_mcda_summary_stats_by_radius('30km')
 
 def search_properties(search_term: str, limit: int = 10) -> pd.DataFrame:
     """
@@ -234,3 +336,7 @@ def initialize_cp2b_session_state():
         
     if 'cp2b_filter_municipality' not in st.session_state:
         st.session_state.cp2b_filter_municipality = 'Todos'
+        
+    # Nova variável para o seletor de raios MCDA
+    if 'cp2b_selected_radius' not in st.session_state:
+        st.session_state.cp2b_selected_radius = '30km'

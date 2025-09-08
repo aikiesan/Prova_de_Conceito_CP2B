@@ -15,14 +15,18 @@ from components.navigation import render_webgis_navigation, inject_webgis_styles
 # CP2B MCDA Imports
 from components.mcda import (
     load_cp2b_complete_database,
+    load_mcda_geoparquet_by_radius,
     get_property_details,
+    get_mcda_summary_stats_by_radius,
     initialize_cp2b_session_state,
     render_mcda_map,
     render_mcda_map_sidebar,
     apply_mcda_filters,
     load_properties_geoparquet,
+    load_properties_geoparquet_by_radius,
     render_interactive_mcda_map,
-    render_property_report_page
+    render_property_report_page,
+    MCDA_SCENARIOS
 )
 
 # --- 2. PAGE CONFIGURATION & INITIALIZATION ---
@@ -670,14 +674,57 @@ def render_mcda_page(view: str):
         st.markdown("## 🎯 Análise MCDA - Região Metropolitana de Campinas")
         st.markdown("### Localização Ótima de Plantas de Biogás")
         
-        # Load data using the NEW function
-        with st.spinner("Carregando dados geoespaciais otimizados..."):
-            cp2b_geodata = load_properties_geoparquet()
+        # === SELETOR DE RAIOS MCDA ===
+        st.markdown("---")
+        st.markdown("### 🔄 Cenários de Análise MCDA")
+        
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 4])
+        
+        with col1:
+            # Seletor de raios
+            selected_radius = st.selectbox(
+                "Raio de Captação:",
+                options=list(MCDA_SCENARIOS.keys()),
+                index=list(MCDA_SCENARIOS.keys()).index(st.session_state.get('cp2b_selected_radius', '30km')),
+                help="Selecione o raio de captação de resíduos para análise MCDA",
+                key="radius_selector"
+            )
+            
+            # Atualizar session state se mudou
+            if selected_radius != st.session_state.get('cp2b_selected_radius'):
+                st.session_state.cp2b_selected_radius = selected_radius
+                st.rerun()
+        
+        with col2:
+            # Estatísticas do cenário selecionado
+            stats = get_mcda_summary_stats_by_radius(selected_radius)
+            if stats['status'] == 'success':
+                st.metric("Propriedades", f"{stats['total_properties']:,}")
+            else:
+                st.metric("Propriedades", "0")
+        
+        with col3:
+            if stats['status'] == 'success':
+                st.metric("Viáveis (>60)", f"{stats['viable_properties']:,}")
+            else:
+                st.metric("Viáveis (>60)", "0")
+                
+        with col4:
+            if stats['status'] == 'success' and stats['viable_properties'] > 0:
+                st.success(f"✅ Cenário {selected_radius}: {stats['viable_percentage']}% das propriedades são viáveis!")
+            else:
+                st.info(f"ℹ️ Carregando dados do cenário {selected_radius}...")
+        
+        # Load data using the NEW function with radius selection
+        with st.spinner(f"Carregando dados MCDA para raio {selected_radius}..."):
+            cp2b_geodata = load_mcda_geoparquet_by_radius(selected_radius)
             
         if cp2b_geodata.empty:
-            st.error("❌ Não foi possível carregar os dados CP2B. Verifique se os arquivos estão no diretório correto.")
-            st.info("📁 Diretório esperado: ./src/streamlit/")
-            st.info("📄 Arquivo necessário: CP2B_Processed_Geometries.geoparquet")
+            st.error(f"❌ Não foi possível carregar os dados MCDA para o raio {selected_radius}.")
+            st.info("📁 Verifique se os arquivos GeoParquet estão no diretório correto:")
+            for radius, filename in MCDA_SCENARIOS.items():
+                file_path = f"./src/streamlit/{filename}"
+                st.info(f"📄 {radius}: {filename}")
             return
             
         # Render sidebar controls
@@ -687,10 +734,13 @@ def render_mcda_page(view: str):
         # Apply filters
         filtered_geodata = apply_mcda_filters(cp2b_geodata, filters)
         
-        # Display metrics
+        # Display dynamic metrics based on selected radius and filters
+        st.markdown("---")
+        st.markdown(f"### 📊 Métricas do Cenário {selected_radius} (Filtrado)")
+        
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Propriedades Carregadas", f"{len(filtered_geodata):,}")
+            st.metric("Propriedades Filtradas", f"{len(filtered_geodata):,}")
         with col2:
             avg_score = filtered_geodata['mcda_score'].mean() if not filtered_geodata.empty and 'mcda_score' in filtered_geodata.columns else 0
             st.metric("Score MCDA Médio", f"{avg_score:.1f}")
@@ -700,7 +750,21 @@ def render_mcda_page(view: str):
         with col4:
             if not filtered_geodata.empty and 'mcda_score' in filtered_geodata.columns:
                 max_score = filtered_geodata['mcda_score'].max()
-                st.metric("Melhor Score", f"{max_score:.1f}")
+                excellent_count = len(filtered_geodata[filtered_geodata['mcda_score'] > 80])
+                st.metric("Excelentes (>80)", f"{excellent_count:,}")
+                
+        # Comparative info box
+        if stats['status'] == 'success':
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.info(f"📈 **{selected_radius}**: {stats['viable_percentage']}% viáveis")
+            with col2:
+                if stats['excellent_percentage'] > 0:
+                    st.success(f"⭐ **Excelentes**: {stats['excellent_percentage']}%")
+                else:
+                    st.warning("⭐ **Excelentes**: 0%")
+            with col3:
+                st.metric("Score Máximo", f"{stats['max_score']:.1f}")
         
         # Create map using the VISIBLE and optimized function
         st.markdown("---")

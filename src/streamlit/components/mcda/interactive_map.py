@@ -22,32 +22,82 @@ MAP_CONFIG = {
 
 # --- 1. DATA LOADING (OPTIMIZED) ---
 @st.cache_data
-def load_properties_geoparquet() -> gpd.GeoDataFrame:
+def load_properties_geoparquet_by_radius(radius: str = '30km') -> gpd.GeoDataFrame:
     """
-    Loads pre-processed properties using an unbreakable, absolute path.
+    Loads MCDA properties for the specified radius using an unbreakable, absolute path.
     """
     try:
-        logger.info("🔄 Loading pre-processed GeoParquet file using absolute path...")
+        # Map radius to filename
+        radius_files = {
+            '10km': 'CP2B_MCDA_10km.geoparquet',
+            '30km': 'CP2B_MCDA_30km.geoparquet', 
+            '50km': 'CP2B_MCDA_50km.geoparquet'
+        }
+        
+        if radius not in radius_files:
+            logger.warning(f"⚠️ Invalid radius '{radius}'. Using '30km' as default.")
+            radius = '30km'
+        
+        filename = radius_files[radius]
+        logger.info(f"🔄 Loading MCDA GeoParquet file {filename} for radius {radius}...")
+        
         # --- THIS IS THE UNBREAKABLE PATH LOGIC ---
-        # 1. Get the path of the current file (interactive_map.py)
         current_file_path = Path(__file__)
-        # 2. Go up two directories (mcda -> components -> streamlit) to find the root folder
         streamlit_root = current_file_path.parent.parent.parent
-        # 3. Construct the full path to the data file
+        geoparquet_path = streamlit_root / filename
+        
+        if not geoparquet_path.exists():
+            logger.warning(f"⚠️ {filename} not found. Trying fallback...")
+            return load_properties_geoparquet_fallback()
+        
+        gdf = gpd.read_parquet(geoparquet_path)
+        gdf = gdf.set_geometry('geometry')
+        
+        # Create spatial index for performance
+        try:
+            gdf.sindex
+        except:
+            logger.warning("Could not create spatial index")
+            
+        logger.info(f"✅ {len(gdf)} properties loaded from {filename}.")
+        return gdf
+        
+    except Exception as e:
+        logger.error(f"❌ Error loading MCDA GeoParquet {radius}: {e}")
+        return load_properties_geoparquet_fallback()
+
+@st.cache_data
+def load_properties_geoparquet_fallback() -> gpd.GeoDataFrame:
+    """
+    Fallback function to load old data format if new files are not available.
+    """
+    try:
+        logger.info("🔄 Loading fallback GeoParquet file...")
+        current_file_path = Path(__file__)
+        streamlit_root = current_file_path.parent.parent.parent
         geoparquet_path = streamlit_root / "CP2B_Processed_Geometries.geoparquet"
         
         gdf = gpd.read_parquet(geoparquet_path)
         gdf = gdf.set_geometry('geometry')
         gdf.sindex
-        logger.info(f"✅ {len(gdf)} properties loaded from GeoParquet.")
+        logger.info(f"✅ {len(gdf)} properties loaded from fallback GeoParquet.")
         return gdf
     except FileNotFoundError:
-        logger.error("❌ GeoParquet file not found! Run preprocess_data.py first.")
-        st.error("Arquivo de dados otimizado (GeoParquet) não encontrado. Execute o script `preprocess_data.py` primeiro.")
+        logger.error("❌ GeoParquet fallback file not found!")
+        st.error("Arquivo de dados otimizado (GeoParquet) não encontrado. Verifique se os arquivos estão no diretório correto.")
         return gpd.GeoDataFrame()
     except Exception as e:
-        logger.error(f"❌ Error loading GeoParquet: {e}")
+        logger.error(f"❌ Error loading fallback GeoParquet: {e}")
         return gpd.GeoDataFrame()
+
+@st.cache_data
+def load_properties_geoparquet() -> gpd.GeoDataFrame:
+    """
+    Maintained for backward compatibility - now calls the radius-specific function.
+    """
+    # Try to get radius from session state, default to 30km
+    radius = st.session_state.get('cp2b_selected_radius', '30km')
+    return load_properties_geoparquet_by_radius(radius)
 
 # --- 2. MAP CREATION (OPTIMIZED) ---
 def create_optimized_interactive_map(gdf_properties: gpd.GeoDataFrame, max_properties: int = 8000) -> folium.Map:
