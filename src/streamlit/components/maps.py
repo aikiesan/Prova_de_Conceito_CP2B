@@ -1,12 +1,16 @@
 import streamlit as st
 import folium
+from folium.plugins import MarkerCluster, HeatMap, MeasureControl
 from streamlit_folium import st_folium
 import geopandas as gpd
 import pandas as pd
+import numpy as np
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import leafmap.foliumap as leafmap
+import branca.colormap as cm
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[3]  # Go up 3 levels instead of 2
 SHAPEFILE_PATH = ROOT / "shapefile" / "Municipios_SP_shapefile.shp"
 
 # Caminhos para shapefiles adicionais
@@ -23,7 +27,6 @@ ADDITIONAL_SHAPEFILES = {
     'rodovias_estaduais': ROOT / "shapefile" / "Rodovias_Estaduais_SP.shp"
 }
 
-@st.cache_data
 def load_and_process_shapefile():
     """Carrega shapefile com processamento otimizado"""
     try:
@@ -172,14 +175,19 @@ def create_detailed_popup(row: pd.Series, potencial: float, filters: Dict = None
     
     return popup_html
 
-def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: int = 200, additional_layers: Dict = None, layer_controls: Dict = None, visualization_mode: str = "Compacto (Recomendado)", filters: Dict = None) -> folium.Map:
+def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: int = 200, additional_layers: Dict = None, layer_controls: Dict = None, visualization_mode: str = "Compacto (Recomendado)", filters: Dict = None, map_center: tuple = None, map_zoom: int = None, highlight_codes: list = None, radius_analysis_info: dict = None, special_viz_mode: str = "Padrão", viz_settings: dict = None) -> folium.Map:
     """Cria mapa limpo com marcadores individuais para melhor leitura"""
-    # Centro otimizado para São Paulo
-    center_lat, center_lon = -23.2, -47.8
+    # Use provided center and zoom, or default to São Paulo
+    if map_center:
+        center_lat, center_lon = map_center
+    else:
+        center_lat, center_lon = -23.2, -47.8
+    
+    zoom_level = map_zoom if map_zoom else 7
     
     m = folium.Map(
         location=[center_lat, center_lon],
-        zoom_start=7,
+        zoom_start=zoom_level,
         tiles='OpenStreetMap',
         # Configurações otimizadas para melhor experiência
         min_zoom=6,      # Evita zoom muito distante
@@ -189,6 +197,9 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
         doubleClickZoom=True,
         dragging=True
     )
+    
+    # Add measurement tool to the map
+    MeasureControl(position='topleft', primary_length_unit='kilometers').add_to(m)
     
     # --- MUDANÇA CRÍTICA DE ORDEM ---
     # Adicione as camadas de referência (fundo) PRIMEIRO
@@ -319,21 +330,53 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
             else:
                 radius = min_radius
             
-            # Stroke otimizado para separação sem sobreposição
-            stroke_color = '#333333'  # Cinza escuro para melhor contraste
+            # --- START: New highlight logic for multiple municipalities ---
+            is_highlighted = False
+            if highlight_codes:
+                is_highlighted = str(row['cd_mun']) in [str(code) for code in highlight_codes]
+            
+            # Make highlighted markers stand out
+            marker_radius = radius * 2.5 if is_highlighted else radius
+            marker_weight = 3 if is_highlighted else stroke_weight
+            marker_color = '#FF0000' if is_highlighted else '#333333'  # Red for highlight
+            marker_fill_opacity = 1.0 if is_highlighted else fill_opacity
+            
+            # Add a pulsing effect to the highlighted marker with custom CSS
+            if is_highlighted:
+                # Create a DivIcon with a custom class for the pulsing animation
+                icon_html = f'''
+                <div class="pulsing-dot-container">
+                  <div class="pulsing-dot" style="background-color: {get_color(potencial)};"></div>
+                </div>
+                '''
+                pulsing_icon = folium.Marker(
+                    location=[row['lat'], row['lon']],
+                    icon=folium.DivIcon(html=icon_html),
+                    tooltip=f"📍 SELECIONADO: {municipio_nome}"
+                )
+                pulsing_icon.add_to(municipios_group)
+                tooltip_text = f"🎯 {municipio_nome}: {potencial:,.0f} Nm³/ano (SELECIONADO)"
+            else:
+                tooltip_text = f"🏛️ {municipio_nome}: {potencial:,.0f} Nm³/ano"
+            # --- END: New highlight logic ---
             
             folium.CircleMarker(
                 location=[row['lat'], row['lon']],
-                radius=radius,
+                # Use the new marker variables
+                radius=marker_radius,
+                weight=marker_weight,
+                color=marker_color,
+                fillOpacity=marker_fill_opacity,
                 popup=folium.Popup(popup_html, max_width=300),
-                tooltip=f"🏛️ {municipio_nome}: {potencial:,.0f} Nm³/ano",
-                color=stroke_color,
-                weight=stroke_weight,
+                tooltip=tooltip_text,
                 fillColor=get_color(potencial),
-                fillOpacity=fill_opacity,
                 opacity=border_opacity,
                 bubblingMouseEvents=False # Evita conflitos de eventos
             ).add_to(municipios_group)
+        
+        # Apply special visualizations based on mode
+        if special_viz_mode and special_viz_mode != "Padrão":
+            apply_special_visualizations(m, top_municipios, special_viz_mode, viz_settings, potencial_values)
         
         # Adicionar grupo de municípios ao mapa
         municipios_group.add_to(m)
@@ -385,6 +428,27 @@ def create_clean_marker_map(gdf_filtered: gpd.GeoDataFrame, max_municipalities: 
     # Usar Element do folium em vez de Template
     from folium import Element
     m.get_root().html.add_child(Element(disable_autopan_js))
+    
+    # --- NEW: Draw Radius Analysis Circle ---
+    if radius_analysis_info and 'center' in radius_analysis_info and 'radius_km' in radius_analysis_info:
+        folium.Circle(
+            location=[radius_analysis_info['center']['lat'], radius_analysis_info['center']['lon']],
+            radius=radius_analysis_info['radius_km'] * 1000,  # Convert km to meters
+            color='#4A90E2',
+            weight=3,
+            fill=True,
+            fill_color='#4A90E2',
+            fill_opacity=0.1,
+            popup=f"Raio de Análise: {radius_analysis_info['radius_km']} km<br/>Centro: {radius_analysis_info['center']['lat']:.4f}, {radius_analysis_info['center']['lon']:.4f}"
+        ).add_to(m)
+        
+        # Add a center marker
+        folium.Marker(
+            location=[radius_analysis_info['center']['lat'], radius_analysis_info['center']['lon']],
+            popup=f"Centro da Análise<br/>Raio: {radius_analysis_info['radius_km']} km",
+            icon=folium.Icon(color='blue', icon='crosshairs', prefix='fa')
+        ).add_to(m)
+    # --- END NEW ---
     
     return m
 
@@ -531,7 +595,11 @@ def create_interactive_legend(m: folium.Map, municipios_data: pd.DataFrame, colo
 def add_additional_layers_to_map(folium_map: folium.Map, additional_layers: Dict, layer_controls: Dict) -> None:
     """Adiciona camadas de referência visual ao mapa."""
     
-    actual_controls = layer_controls.get('layer_controls', {})
+    # Robust handling when layer_controls is None or already the controls dict
+    if layer_controls is None:
+        actual_controls = {}
+    else:
+        actual_controls = layer_controls
     
     # Função auxiliar para limpar os dados e manter apenas a geometria
     def get_geometry_only(gdf):
@@ -700,8 +768,21 @@ def render_layer_controls() -> Dict[str, bool]:
         'regioes_admin': regioes_admin
     }
 
-def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = None, layer_controls: Dict[str, bool] = None, filters: Dict[str, Any] = None) -> None:
-    """Renderiza mapa com dados pré-filtrados do dashboard"""
+def render_map(
+    municipios_data: pd.DataFrame,
+    layer_controls: Dict[str, bool] = None,
+    filters: Dict[str, Any] = None,
+    map_center: List[float] = None,  # NEW: Desired center [lat, lon]
+    map_zoom: int = 7,              # NEW: Desired zoom level
+    highlight_codes: list = None,   # NEW: List of municipality codes to highlight
+    radius_analysis_info: dict = None,  # NEW: Radius analysis info with center and radius
+    zen_mode: bool = False,         # NEW: Zen mode flag
+    special_viz_mode: str = "Padrão",  # NEW: Special visualization mode
+    viz_settings: dict = None       # NEW: Visualization settings
+) -> Optional[Dict[str, Any]]:
+    """
+    [MODIFIED] Renderiza mapa e RETORNA o código do município clicado.
+    """
     
     # Verificar se dados já vêm pré-filtrados
     is_pre_filtered = filters and filters.get('pre_filtered', False)
@@ -771,9 +852,7 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
     # Criamos 'nm_mun' explicitamente a partir de 'NM_MUN' para uso no restante do código
     gdf_filtered['nm_mun'] = gdf_filtered['NM_MUN']
     
-    # Aplicar filtro de municípios selecionados (se houver)
-    if selected_municipios:
-        gdf_filtered = gdf_filtered[gdf_filtered['cd_mun'].isin(selected_municipios)]
+    # All municipalities should be shown from the start - no filtering needed
     
     # Filtrar apenas os municípios que estão nos dados pré-filtrados
     municipios_filtrados_ids = municipios_data['cd_mun'].tolist()
@@ -783,18 +862,31 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
     
     # Criar e renderizar mapa com dados pré-filtrados
     try:
+        # Use the new map_center and map_zoom arguments
+        # If no center is provided, calculate it from the data as a fallback.
+        if map_center is None:
+            map_center = [-22.5, -48.5]  # Default for São Paulo
+        
+        # Convert to tuple format expected by create_clean_marker_map
+        map_center_tuple = tuple(map_center) if map_center else None
+        
         biogas_map = create_clean_marker_map(
             gdf_filtered, 
             500,  # Usar limite alto já que dados vêm filtrados
             additional_layers=additional_layers,
             layer_controls=layer_controls,
             visualization_mode="Compacto (Recomendado)",
-            filters={'pre_filtered': True}  # Indicar que dados já estão filtrados
+            filters={'pre_filtered': True},  # Indicar que dados já estão filtrados
+            map_center=map_center_tuple,
+            map_zoom=map_zoom,
+            highlight_codes=highlight_codes,
+            radius_analysis_info=radius_analysis_info,
+            special_viz_mode=special_viz_mode,
+            viz_settings=viz_settings
         )
         
-        
         # CONTAINER DO MAPA COM AJUSTE DE ALTURA BASEADO NO MODO
-        fullscreen_mode = filters.get('fullscreen_mode', False)
+        fullscreen_mode = filters.get('fullscreen_mode', False) if filters else False
         map_height = 800 if fullscreen_mode else 600  # Altura maior em fullscreen
         
         map_container = st.container()
@@ -821,18 +913,599 @@ def render_map(municipios_data: pd.DataFrame, selected_municipios: List[str] = N
                 """, unsafe_allow_html=True)
             
             map_data = st_folium(
-                biogas_map, 
+                biogas_map,
                 width=None,
-                height=map_height,
+                # MODIFICATION: Change height to a large number.
+                # The CSS class 'map-container' will control the actual visible height.
+                height=800,
                 use_container_width=True,
-                returned_objects=["last_object_clicked"],
-                key=map_key  # Key única força regeneração total
+                returned_objects=["last_object_clicked_popup", "last_clicked"],
+                key="main_map"
             )
-        
-        # Informação do clique (removida para simplificar)
-        pass
+            
+            # MODIFICATION 2: Process both municipality clicks and map clicks
+            result_data = {}
+            
+            # Handle municipality selection (popup clicks)
+            if map_data and map_data.get("last_object_clicked_popup"):
+                popup_html = map_data["last_object_clicked_popup"]
+                try:
+                    # Extract the city code from the popup's HTML
+                    code_str = popup_html.split("Código: ")[1].split("</div>")[0]
+                    if code_str.isdigit():
+                        result_data["selected_municipality"] = code_str
+                except (IndexError, ValueError):
+                    pass
+            
+            # Handle raw map clicks (for radius analysis)
+            if map_data and map_data.get("last_clicked"):
+                result_data["last_clicked"] = map_data["last_clicked"]
+            
+            return result_data  # Always return dict, even if empty
             
     except Exception as e:
         st.error(f"Erro ao renderizar mapa: {e}")
-        # Debug removido para simplificar
-        pass
+        return None  # Return None if there's an error
+
+
+def create_heatmap_visualization(municipios_data: pd.DataFrame, 
+                               value_column: str = 'total_final_nm_ano',
+                               title: str = "Mapa de Calor - Potencial de Biogás") -> None:
+    """
+    Cria visualização de mapa de calor usando leafmap
+    
+    Args:
+        municipios_data: DataFrame com dados dos municípios
+        value_column: Coluna a ser usada para intensidade do mapa de calor
+        title: Título do mapa
+    """
+    try:
+        # Carregar shapefile para obter coordenadas
+        gdf = load_and_process_shapefile()
+        if gdf is None:
+            st.error("Não foi possível carregar dados geográficos para o mapa de calor")
+            return
+        
+        # Preparar dados para junção
+        gdf['cd_mun'] = gdf['cd_mun'].astype(str)
+        municipios_data['cd_mun'] = municipios_data['cd_mun'].astype(str)
+        
+        # Juntar dados
+        heatmap_data = gdf.merge(municipios_data, on='cd_mun', how='inner')
+        
+        # Filtrar apenas municípios com dados válidos
+        heatmap_data = heatmap_data.dropna(subset=[value_column])
+        heatmap_data = heatmap_data[heatmap_data[value_column] > 0]
+        
+        if len(heatmap_data) == 0:
+            st.warning("Nenhum dado disponível para o mapa de calor")
+            return
+        
+        # Criar mapa com leafmap
+        center_lat = heatmap_data['lat'].mean()
+        center_lon = heatmap_data['lon'].mean()
+        
+        m = leafmap.Map(
+            location=[center_lat, center_lon], 
+            zoom_start=7,
+            tiles='OpenStreetMap'
+        )
+        
+        # Preparar dados para heatmap (formato: [[lat, lon, weight], ...])
+        heat_data = []
+        for _, row in heatmap_data.iterrows():
+            # Normalizar os valores para melhor visualização
+            weight = float(row[value_column])
+            heat_data.append([row['lat'], row['lon'], weight])
+        
+        # Adicionar heatmap ao mapa
+        HeatMap(
+            heat_data,
+            name="Potencial de Biogás",
+            radius=25,
+            blur=15,
+            gradient={
+                0.0: 'blue',
+                0.3: 'cyan', 
+                0.5: 'lime',
+                0.7: 'yellow',
+                1.0: 'red'
+            }
+        ).add_to(m)
+        
+        # Adicionar controle de camadas
+        folium.LayerControl().add_to(m)
+        
+        # Mostrar estatísticas
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Municípios no Mapa", len(heatmap_data))
+        with col2:
+            st.metric("Valor Máximo", f"{heatmap_data[value_column].max():.1f}")
+        with col3:
+            st.metric("Valor Médio", f"{heatmap_data[value_column].mean():.1f}")
+        
+        # Renderizar mapa
+        st_folium(m, width=None, height=600, use_container_width=True)
+        
+        # Informações sobre o mapa de calor
+        with st.expander("ℹ️ Como interpretar o mapa de calor"):
+            st.markdown("""
+            **Cores do Mapa de Calor:**
+            - 🔵 **Azul**: Baixo potencial de biogás
+            - 🟡 **Amarelo**: Potencial médio de biogás  
+            - 🔴 **Vermelho**: Alto potencial de biogás
+            
+            **Características:**
+            - Áreas mais "quentes" (vermelhas) indicam maior concentração de potencial
+            - O raio de influência mostra a densidade regional
+            - Útil para identificar clusters e padrões geográficos
+            """)
+            
+    except Exception as e:
+        st.error(f"Erro ao criar mapa de calor: {e}")
+        if st.session_state.get('show_debug', False):
+            st.exception(e)
+
+
+def create_clustered_map(municipios_data: pd.DataFrame,
+                        selected_municipios: List[str] = None,
+                        value_column: str = 'total_final_nm_ano',
+                        title: str = "Mapa com Agrupamento de Marcadores") -> None:
+    """
+    Cria mapa com clustering de marcadores para melhor performance
+    
+    Args:
+        municipios_data: DataFrame com dados dos municípios
+        selected_municipios: Lista de códigos de municípios selecionados
+        value_column: Coluna para determinar cor/tamanho dos marcadores
+        title: Título do mapa
+    """
+    try:
+        # Carregar e processar dados geográficos
+        gdf = load_and_process_shapefile()
+        if gdf is None:
+            st.error("Não foi possível carregar dados geográficos")
+            return
+        
+        # Preparar dados
+        gdf['cd_mun'] = gdf['cd_mun'].astype(str)
+        municipios_data['cd_mun'] = municipios_data['cd_mun'].astype(str)
+        
+        # Juntar dados
+        map_data = gdf.merge(municipios_data, on='cd_mun', how='inner')
+        
+        # Debug: Mostrar colunas disponíveis
+        if st.session_state.get('show_debug', False):
+            st.write("Debug - Colunas disponíveis:", list(map_data.columns))
+        
+        # Aplicar filtro de municípios selecionados
+        if selected_municipios:
+            map_data = map_data[map_data['cd_mun'].isin(selected_municipios)]
+        
+        # Filtrar apenas municípios com dados válidos
+        map_data = map_data.dropna(subset=[value_column])
+        
+        if len(map_data) == 0:
+            st.warning("Nenhum dado disponível para o mapa")
+            return
+        
+        # Criar mapa base
+        center_lat = map_data['lat'].mean()
+        center_lon = map_data['lon'].mean()
+        
+        m = folium.Map(
+            location=[center_lat, center_lon],
+            zoom_start=7,
+            tiles='OpenStreetMap'
+        )
+        
+        # Add measurement tool to the map
+        MeasureControl(position='topleft', primary_length_unit='kilometers').add_to(m)
+        
+        # Criar cluster de marcadores
+        marker_cluster = MarkerCluster(
+            name="Municípios",
+            overlay=True,
+            control=True,
+            icon_create_function=None
+        ).add_to(m)
+        
+        # Criar colormap baseado nos valores
+        min_val = map_data[value_column].min()
+        max_val = map_data[value_column].max()
+        
+        # Definir colormap
+        colormap = cm.LinearColormap(
+            colors=['blue', 'cyan', 'lime', 'yellow', 'red'],
+            vmin=min_val,
+            vmax=max_val,
+            caption=f'Potencial de Biogás (Nm³/ano)'
+        )
+        
+        # Adicionar marcadores ao cluster
+        for _, row in map_data.iterrows():
+            # Determinar cor baseada no valor
+            color = colormap(row[value_column])
+            
+            # Obter nome do município (pode ser nm_mun ou NM_MUN)
+            mun_name = row.get('nm_mun', row.get('NM_MUN', f"Município {row.get('cd_mun', 'N/A')}"))
+            
+            # Criar popup com informações detalhadas
+            popup_html = f"""
+            <div style="font-family: Arial; width: 200px;">
+                <h4>{mun_name}</h4>
+                <hr>
+                <b>Potencial Total:</b> {row[value_column]:.1f} Nm³/ano<br>
+                <b>Código:</b> {row.get('cd_mun', 'N/A')}<br>
+                <b>Área:</b> {row.get('area_km2', 'N/A')} km²
+            </div>
+            """
+            
+            # Adicionar marcador
+            folium.CircleMarker(
+                location=[row['lat'], row['lon']],
+                radius=8,
+                popup=folium.Popup(popup_html, max_width=250),
+                color='white',
+                weight=2,
+                fillColor=color,
+                fillOpacity=0.7,
+                tooltip=f"{mun_name}: {row[value_column]:.1f}"
+            ).add_to(marker_cluster)
+        
+        # Adicionar colormap ao mapa
+        colormap.add_to(m)
+        
+        # Adicionar controle de camadas
+        folium.LayerControl().add_to(m)
+        
+        # Mostrar estatísticas
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total de Municípios", len(map_data))
+        with col2:
+            st.metric("Potencial Total", f"{map_data[value_column].sum():.0f}")
+        with col3:
+            st.metric("Maior Potencial", f"{max_val:.1f}")
+        with col4:
+            st.metric("Menor Potencial", f"{min_val:.1f}")
+        
+        # Renderizar mapa
+        st_folium(m, width=None, height=600, use_container_width=True)
+        
+        # Informações sobre clustering
+        with st.expander("ℹ️ Como usar o mapa com agrupamento"):
+            st.markdown("""
+            **Recursos do Mapa:**
+            - 🔍 **Zoom**: Aproxime para ver marcadores individuais
+            - 📊 **Clusters**: Números mostram quantos municípios estão agrupados
+            - 🎨 **Cores**: Indicam intensidade do potencial de biogás
+            - 💡 **Clique**: Nos marcadores para ver detalhes do município
+            
+            **Vantagens:**
+            - Melhor performance com muitos dados
+            - Visão clara em diferentes níveis de zoom
+            - Fácil identificação de padrões regionais
+            """)
+            
+    except Exception as e:
+        st.error(f"Erro ao criar mapa com clustering: {e}")
+        if st.session_state.get('show_debug', False):
+            st.exception(e)
+
+
+def render_advanced_map_section(municipios_data: pd.DataFrame, 
+                               selected_municipios: List[str] = None,
+                               layer_controls: Dict[str, bool] = None,
+                               filters: Dict[str, Any] = None) -> None:
+    """
+    Renderiza seção com diferentes tipos de visualização de mapa
+    
+    Args:
+        municipios_data: DataFrame com dados dos municípios
+        selected_municipios: Lista de códigos de municípios selecionados  
+        layer_controls: Controles de camadas adicionais
+        filters: Filtros aplicados aos dados
+    """
+    
+    st.markdown("### 🗺️ Visualizações Avançadas do Mapa")
+    
+    # Seletor de tipo de visualização
+    viz_type = st.selectbox(
+        "Escolha o tipo de visualização:",
+        options=[
+            "Mapa Padrão",
+            "Mapa de Calor", 
+            "Mapa com Clustering",
+            "Comparação Lado a Lado"
+        ],
+        help="Diferentes tipos de visualização revelam padrões distintos nos dados"
+    )
+    
+    # Seletor de variável para visualizar
+    numeric_columns = [col for col in municipios_data.columns 
+                      if municipios_data[col].dtype in ['int64', 'float64'] 
+                      and col not in ['cd_mun', 'lat', 'lon']]
+    
+    if numeric_columns:
+        value_column = st.selectbox(
+            "Variável para visualizar:",
+            options=numeric_columns,
+            index=0 if 'total_final_nm_ano' not in numeric_columns else numeric_columns.index('total_final_nm_ano'),
+            help="Escolha qual variável usar para colorir/dimensionar os elementos do mapa"
+        )
+    else:
+        st.error("Nenhuma variável numérica encontrada nos dados")
+        return
+    
+    # Renderizar visualização selecionada
+    if viz_type == "Mapa Padrão":
+        st.info("📍 Mapa padrão com polígonos dos municípios")
+        render_map(municipios_data, layer_controls, filters)
+        
+    elif viz_type == "Mapa de Calor":
+        st.info("🔥 Mapa de calor mostra densidade e intensidade dos dados")
+        create_heatmap_visualization(municipios_data, value_column)
+        
+    elif viz_type == "Mapa com Clustering":
+        st.info("🎯 Marcadores agrupados para melhor performance e clareza")
+        create_clustered_map(municipios_data, None, value_column)
+        
+    elif viz_type == "Comparação Lado a Lado":
+        st.info("📊 Compare diferentes visualizações simultaneamente")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Mapa de Calor**")
+            create_heatmap_visualization(municipios_data, value_column)
+            
+        with col2:
+            st.markdown("**Mapa com Clustering**") 
+            create_clustered_map(municipios_data, None, value_column)
+
+
+def apply_special_visualizations(folium_map, gdf_data, viz_mode, viz_settings, potencial_values):
+    """Apply special visualizations to the map based on selected mode"""
+    import numpy as np
+    from scipy.spatial.distance import cdist
+    from sklearn.cluster import KMeans
+    
+    if not viz_settings:
+        viz_settings = {}
+    
+    if viz_mode == "Hotspots":
+        create_hotspot_visualization(folium_map, gdf_data, potencial_values, viz_settings.get('threshold', 75))
+    
+    elif viz_mode == "Clusters":
+        if viz_settings.get('cluster_analysis', False):
+            create_cluster_visualization(folium_map, gdf_data, potencial_values)
+    
+    elif viz_mode == "Densidade":
+        if viz_settings.get('density_heatmap', False):
+            create_density_heatmap(folium_map, gdf_data, potencial_values)
+    
+    elif viz_mode == "Corredores":
+        create_corridor_visualization(folium_map, gdf_data, potencial_values)
+
+
+def create_hotspot_visualization(folium_map, gdf_data, potencial_values, threshold_percentile=75):
+    """Create hotspot visualization highlighting high-potential areas"""
+    threshold_value = np.percentile(potencial_values, threshold_percentile)
+    
+    # Create hotspot group
+    hotspot_group = folium.FeatureGroup(
+        name=f"🔥 Hotspots (>{threshold_percentile}º percentil)",
+        overlay=True,
+        control=True,
+        show=True
+    )
+    
+    # Add hotspot areas
+    for _, row in gdf_data.iterrows():
+        if pd.isna(row['lat']) or pd.isna(row['lon']):
+            continue
+            
+        potencial = row.get('display_value', row.get('total_final_nm_ano', 0))
+        
+        if potencial >= threshold_value:
+            # Create pulsing hotspot marker
+            municipio_nome = row.get('nm_mun', row.get('NOME_MUNICIPIO', 'N/A'))
+            
+            # Add hotspot circle
+            folium.CircleMarker(
+                location=[row['lat'], row['lon']],
+                radius=15,
+                color='#ff0000',
+                weight=3,
+                fillColor='#ff4444',
+                fillOpacity=0.3,
+                popup=f"🔥 HOTSPOT: {municipio_nome}<br>Potencial: {potencial:,.0f} Nm³/ano",
+                tooltip=f"🔥 Hotspot: {municipio_nome}"
+            ).add_to(hotspot_group)
+            
+            # Add glow effect
+            folium.CircleMarker(
+                location=[row['lat'], row['lon']],
+                radius=25,
+                color='#ff6666',
+                weight=1,
+                fillColor='#ff0000',
+                fillOpacity=0.1,
+            ).add_to(hotspot_group)
+    
+    hotspot_group.add_to(folium_map)
+
+
+def create_cluster_visualization(folium_map, gdf_data, potencial_values, n_clusters=5):
+    """Create cluster visualization using K-means clustering"""
+    # Prepare data for clustering
+    valid_data = gdf_data.dropna(subset=['lat', 'lon'])
+    if len(valid_data) < n_clusters:
+        return
+    
+    # Features for clustering: location + potential
+    features = valid_data[['lat', 'lon']].values
+    potentials = valid_data.get('display_value', valid_data.get('total_final_nm_ano', pd.Series([0] * len(valid_data)))).values.reshape(-1, 1)
+    
+    # Normalize features
+    features_normalized = (features - features.mean(axis=0)) / features.std(axis=0)
+    potentials_normalized = (potentials - potentials.mean()) / potentials.std()
+    
+    # Combine features
+    X = np.hstack([features_normalized, potentials_normalized])
+    
+    # Perform clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    clusters = kmeans.fit_predict(X)
+    
+    # Create cluster group
+    cluster_group = folium.FeatureGroup(
+        name=f"🎯 Clusters (K={n_clusters})",
+        overlay=True,
+        control=True,
+        show=True
+    )
+    
+    # Color palette for clusters
+    cluster_colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628']
+    
+    # Add cluster markers
+    for i in range(n_clusters):
+        cluster_data = valid_data[clusters == i]
+        if len(cluster_data) == 0:
+            continue
+            
+        color = cluster_colors[i % len(cluster_colors)]
+        
+        # Calculate cluster centroid
+        centroid_lat = cluster_data['lat'].mean()
+        centroid_lon = cluster_data['lon'].mean()
+        avg_potential = cluster_data.get('display_value', cluster_data.get('total_final_nm_ano', pd.Series([0] * len(cluster_data)))).mean()
+        
+        # Add cluster centroid
+        folium.Marker(
+            location=[centroid_lat, centroid_lon],
+            icon=folium.DivIcon(
+                html=f'''<div style="background-color: {color}; 
+                         border-radius: 50%; width: 30px; height: 30px; 
+                         display: flex; align-items: center; justify-content: center;
+                         color: white; font-weight: bold; font-size: 12px;
+                         border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+                         {i+1}</div>'''
+            ),
+            popup=f"Cluster {i+1}<br>Municípios: {len(cluster_data)}<br>Potencial Médio: {avg_potential:,.0f} Nm³/ano",
+            tooltip=f"Cluster {i+1}: {len(cluster_data)} municípios"
+        ).add_to(cluster_group)
+        
+        # Add cluster boundary (convex hull approximation)
+        if len(cluster_data) >= 3:
+            coords = [[row['lat'], row['lon']] for _, row in cluster_data.iterrows()]
+            try:
+                folium.Polygon(
+                    locations=coords,
+                    color=color,
+                    weight=2,
+                    fillColor=color,
+                    fillOpacity=0.1
+                ).add_to(cluster_group)
+            except:
+                pass
+    
+    cluster_group.add_to(folium_map)
+
+
+def create_density_heatmap(folium_map, gdf_data, potencial_values):
+    """Create density heatmap overlay"""
+    # Prepare heatmap data
+    heat_data = []
+    max_potential = potencial_values.max()
+    
+    for _, row in gdf_data.iterrows():
+        if pd.isna(row['lat']) or pd.isna(row['lon']):
+            continue
+            
+        potencial = row.get('display_value', row.get('total_final_nm_ano', 0))
+        if potencial > 0:
+            # Normalize intensity between 0.1 and 1.0
+            intensity = max(0.1, min(1.0, potencial / max_potential))
+            heat_data.append([row['lat'], row['lon'], intensity])
+    
+    if heat_data:
+        # Add heatmap layer
+        HeatMap(
+            heat_data,
+            name="🔥 Mapa de Densidade",
+            min_opacity=0.2,
+            max_zoom=18,
+            radius=25,
+            blur=15,
+            overlay=True,
+            control=True,
+            show=True
+        ).add_to(folium_map)
+
+
+def create_corridor_visualization(folium_map, gdf_data, potencial_values, threshold_percentile=60):
+    """Create visualization of high-potential corridors connecting adjacent municipalities"""
+    from scipy.spatial.distance import cdist
+    
+    # Filter high-potential municipalities
+    threshold_value = np.percentile(potencial_values, threshold_percentile)
+    high_potential = gdf_data[gdf_data.get('display_value', gdf_data.get('total_final_nm_ano', pd.Series([0] * len(gdf_data)))) >= threshold_value].copy()
+    
+    if len(high_potential) < 2:
+        return
+    
+    # Create corridor group
+    corridor_group = folium.FeatureGroup(
+        name="🛣️ Corredores de Alto Potencial",
+        overlay=True,
+        control=True,
+        show=True
+    )
+    
+    # Calculate distances between municipalities
+    coords = high_potential[['lat', 'lon']].values
+    distances = cdist(coords, coords, metric='euclidean')
+    
+    # Create connections for nearby municipalities (within reasonable distance)
+    max_distance = 0.5  # approximately 50km in degrees
+    
+    added_connections = set()
+    
+    for i in range(len(high_potential)):
+        for j in range(i + 1, len(high_potential)):
+            if distances[i, j] <= max_distance:
+                # Avoid duplicate connections
+                connection_key = tuple(sorted([i, j]))
+                if connection_key in added_connections:
+                    continue
+                    
+                added_connections.add(connection_key)
+                
+                # Get municipality data
+                mun1 = high_potential.iloc[i]
+                mun2 = high_potential.iloc[j]
+                
+                # Calculate corridor strength based on combined potential
+                potential1 = mun1.get('display_value', mun1.get('total_final_nm_ano', 0))
+                potential2 = mun2.get('display_value', mun2.get('total_final_nm_ano', 0))
+                corridor_strength = (potential1 + potential2) / 2
+                
+                # Line width based on corridor strength
+                max_strength = potencial_values.max()
+                line_weight = max(2, min(8, int((corridor_strength / max_strength) * 6) + 2))
+                
+                # Add corridor line
+                folium.PolyLine(
+                    locations=[[mun1['lat'], mun1['lon']], [mun2['lat'], mun2['lon']]],
+                    color='#ff6b35',
+                    weight=line_weight,
+                    opacity=0.7,
+                    popup=f"Corredor: {mun1.get('nm_mun', 'N/A')} ↔ {mun2.get('nm_mun', 'N/A')}<br>Força: {corridor_strength:,.0f} Nm³/ano",
+                    tooltip=f"Corredor de {corridor_strength:,.0f} Nm³/ano"
+                ).add_to(corridor_group)
+    
+    corridor_group.add_to(folium_map)

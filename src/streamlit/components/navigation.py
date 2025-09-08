@@ -1,5 +1,6 @@
 """
-Simple page navigation sidebar for CP2B Dashboard
+Navigation components for CP2B Dashboard
+Includes both sidebar navigation and WebGIS top navigation bar
 """
 
 import streamlit as st
@@ -24,6 +25,7 @@ def render_navigation_sidebar() -> str:
         {"label": "🎯 Simulations", "key": "simulations"}, 
         {"label": "📈 Analysis", "key": "analysis"},
         {"label": "📋 Data Explorer", "key": "data"},
+        {"label": "📚 References", "key": "references"},
         {"label": "🔧 Debug", "key": "debug"}
     ]
     
@@ -187,7 +189,299 @@ def get_page_config(page: str) -> Dict[str, Any]:
             "subtitle": "Technical information and troubleshooting",
             "show_filters": False,
             "default_view": "debug"
-        }
+        },
+        "references": {
+            "title": "📚 Scientific References",
+            "subtitle": "Comprehensive scientific bibliography and citations for biogas conversion factors",
+            "show_filters": False,
+            "default_view": "references"
+        },
     }
     
     return configs.get(page, configs["dashboard"])
+
+
+def render_webgis_navigation() -> Dict[str, Any]:
+    """
+    Renders a professional WebGIS-style top navigation bar
+    Perfect for map-focused applications
+    """
+    
+    # Inject WebGIS navigation CSS
+    st.markdown("""
+    <style>
+    .webgis-nav-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 70px;
+        background: linear-gradient(135deg, #2c5530 0%, #4a7c59 50%, #6b9b76 100%);
+        box-shadow: 0 3px 15px rgba(0,0,0,0.2);
+        z-index: 10000;
+        padding: 0 25px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 2px solid rgba(255,255,255,0.1);
+    }
+    
+    .webgis-logo {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: white;
+    }
+    
+    .webgis-logo-icon {
+        font-size: 2rem;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    }
+    
+    .webgis-logo-text {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .webgis-logo-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        line-height: 1;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .webgis-logo-subtitle {
+        font-size: 0.75rem;
+        opacity: 0.9;
+        font-weight: 400;
+        line-height: 1;
+        margin-top: 2px;
+    }
+    
+    .webgis-center-title {
+        color: white;
+        text-align: center;
+        flex: 1;
+        margin: 0 40px;
+    }
+    
+    .webgis-center-title h1 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin: 0;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        line-height: 1.2;
+    }
+    
+    .webgis-center-title p {
+        font-size: 0.8rem;
+        opacity: 0.85;
+        margin: 2px 0 0 0;
+    }
+    
+    .webgis-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .webgis-control-button {
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.25);
+        color: white;
+        padding: 10px 18px;
+        border-radius: 25px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        backdrop-filter: blur(10px);
+    }
+    
+    .webgis-control-button:hover {
+        background: rgba(255,255,255,0.25);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    
+    .webgis-control-button.active {
+        background: rgba(255,255,255,0.9);
+        color: #2c5530;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    
+    .webgis-info-badge {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        border: 1px solid rgba(255,255,255,0.2);
+        backdrop-filter: blur(10px);
+    }
+    
+    .webgis-separator {
+        width: 1px;
+        height: 35px;
+        background: rgba(255,255,255,0.2);
+        margin: 0 8px;
+    }
+    
+    /* Adjust main content area */
+    .stApp > div:first-child {
+        padding-top: 70px;
+    }
+    
+    .main .block-container {
+        padding-top: 85px;
+        padding-left: 0;
+        padding-right: 0;
+        max-width: 100%;
+    }
+    
+    /* Hide default Streamlit header */
+    .stApp > header[data-testid="stHeader"] {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Get municipality count from session state
+    muni_count = len(st.session_state.get('data', []))
+    
+    # Navigation HTML - simplified version to avoid rendering issues
+    panel_active = "active" if st.session_state.get('show_panel', True) else ""
+    zen_active = "active" if st.session_state.get('zen_mode', False) else ""
+    
+    nav_html = f"""
+    <div class="webgis-nav-container">
+        <div class="webgis-logo">
+            <div class="webgis-logo-icon">🌱</div>
+            <div class="webgis-logo-text">
+                <div class="webgis-logo-title">CP2B WebGIS</div>
+                <div class="webgis-logo-subtitle">Biogas Analysis Platform</div>
+            </div>
+        </div>
+        
+        <div class="webgis-center-title">
+            <h1>Dashboard Potencial de Biogás - São Paulo</h1>
+            <p>Sistema de Análise Geoespacial para Resíduos Orgânicos</p>
+        </div>
+        
+        <div class="webgis-controls">
+            <div class="webgis-info-badge">📊 {muni_count} Municípios</div>
+            <div class="webgis-separator"></div>
+            <div class="webgis-control-button {panel_active}" id="toggle-panel-btn">🎛️ Painel</div>
+            <div class="webgis-control-button {zen_active}" id="toggle-zen-btn">🗺️ Zen Mode</div>
+        </div>
+    </div>
+    """
+    
+    # Use standard markdown for reliable rendering
+    st.markdown(nav_html, unsafe_allow_html=True)
+    
+    return {'webgis_nav_rendered': True}
+
+
+def inject_webgis_styles():
+    """
+    Injects additional styles for full WebGIS experience
+    """
+    st.markdown("""
+    <style>
+    /* Full viewport WebGIS experience */
+    .stApp {
+        background-color: #f8fafc;
+    }
+    
+    /* Map takes full available space */
+    .streamlit-folium {
+        width: 100% !important;
+        height: calc(100vh - 70px) !important;
+        border-radius: 0 !important;
+    }
+    
+    /* Enhanced floating panels */
+    .floating-panel {
+        top: 90px;
+        right: 25px;
+        width: 400px;
+        max-height: calc(100vh - 120px);
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        border-radius: 12px;
+    }
+    
+    .floating-panel.hidden {
+        transform: translateX(450px);
+        opacity: 0;
+    }
+    
+    /* Professional panel styling */
+    .floating-panel-header {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        margin: -15px -15px 20px -15px;
+        padding: 20px;
+        border-radius: 12px 12px 0 0;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #2d3748;
+    }
+    
+    /* Enhanced panel tabs */
+    .panel-tabs {
+        display: flex;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e2e8f0;
+        gap: 5px;
+    }
+    
+    .panel-tabs .tab {
+        background: rgba(44, 85, 48, 0.08);
+        color: #2c5530;
+        border: 1px solid rgba(44, 85, 48, 0.15);
+        padding: 12px 20px;
+        border-radius: 8px 8px 0 0;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+    }
+    
+    .panel-tabs .tab:hover {
+        background: rgba(44, 85, 48, 0.15);
+        transform: translateY(-1px);
+    }
+    
+    .panel-tabs .tab.active {
+        background: #2c5530;
+        color: white;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(44, 85, 48, 0.3);
+    }
+    
+    /* Remove the old toggle button */
+    .panel-toggle-button {
+        display: none;
+    }
+    
+    /* Enhance metrics in panels */
+    .stMetric {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    </style>
+    """, unsafe_allow_html=True)

@@ -1,5 +1,6 @@
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 import pandas as pd
+import numpy as np
 import streamlit as st
 
 # Import scientific references system
@@ -357,5 +358,116 @@ def apply_scenario_to_data(df: pd.DataFrame, scenario_config: Dict[str, Any]) ->
     df_scenario['total_pecuaria_scenario'] = df_scenario[[col for col in pecuaria_sources if col in df_scenario.columns]].sum(axis=1)
     
     return df_scenario
+
+
+# ==============================================================================
+#                           RADIUS ANALYSIS FUNCTIONS
+# ==============================================================================
+
+def haversine(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """
+    Calculate the great-circle distance between two points
+    on the earth (specified in decimal degrees) using the Haversine formula.
+    
+    Args:
+        lon1, lat1: Longitude and latitude of first point
+        lon2, lat2: Longitude and latitude of second point
+        
+    Returns:
+        Distance in kilometers
+    """
+    # Convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
+
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+    c = 2 * np.arcsin(np.sqrt(a))
+    r = 6371  # Radius of earth in kilometers
+    return c * r
+
+
+def get_municipalities_in_radius(
+    df: pd.DataFrame, center_point: Dict[str, float], radius_km: float
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Filters the main dataframe to find all municipalities within a given
+    radius from a center point.
+
+    Args:
+        df: The main dataframe of all municipalities, must contain 'lat' and 'lon'
+        center_point: A dictionary with 'lat' and 'lon' for the circle's center
+        radius_km: The radius of the circle in kilometers
+
+    Returns:
+        A tuple containing:
+        - A filtered pandas DataFrame with only the municipalities within the radius
+        - A list of the codes ('cd_mun') of the municipalities within the radius
+    """
+    if 'lat' not in df.columns or 'lon' not in df.columns:
+        raise ValueError("Input DataFrame must contain 'lat' and 'lon' columns.")
+
+    center_lat = center_point['lat']
+    center_lon = center_point['lon']
+
+    # Calculate distance for every municipality from the center point
+    distances = df.apply(
+        lambda row: haversine(center_lon, center_lat, row['lon'], row['lat']),
+        axis=1
+    )
+
+    # Add distances to the dataframe for reference
+    df_with_distances = df.copy()
+    df_with_distances['distance_km'] = distances
+
+    # Filter the dataframe based on the distance
+    df_in_radius = df_with_distances[distances <= radius_km].copy()
+    
+    # Sort by distance from center
+    df_in_radius = df_in_radius.sort_values('distance_km')
+    
+    # Get the list of codes
+    codes_in_radius = df_in_radius['cd_mun'].tolist()
+
+    return df_in_radius, codes_in_radius
+
+
+def calculate_radius_analysis_summary(df_in_radius: pd.DataFrame, selected_residues: List[str]) -> Dict[str, Any]:
+    """
+    Calculate summary statistics for municipalities within the radius analysis.
+    
+    Args:
+        df_in_radius: DataFrame of municipalities within the radius
+        selected_residues: List of residue columns to analyze
+        
+    Returns:
+        Dictionary with summary statistics
+    """
+    if df_in_radius.empty:
+        return {
+            'total_municipalities': 0,
+            'total_potential': 0,
+            'average_potential': 0,
+            'max_potential': 0,
+            'min_potential': 0,
+            'center_distance_km': 0
+        }
+    
+    # Calculate combined potential
+    if len(selected_residues) > 1:
+        combined_potential = df_in_radius[selected_residues].sum(axis=1)
+    else:
+        combined_potential = df_in_radius[selected_residues[0]] if selected_residues else 0
+    
+    return {
+        'total_municipalities': len(df_in_radius),
+        'total_potential': combined_potential.sum(),
+        'average_potential': combined_potential.mean(),
+        'max_potential': combined_potential.max(),
+        'min_potential': combined_potential.min(),
+        'center_distance_km': df_in_radius['distance_km'].iloc[0] if not df_in_radius.empty else 0,
+        'max_distance_km': df_in_radius['distance_km'].max() if not df_in_radius.empty else 0
+    }
 
 

@@ -140,7 +140,7 @@ def render_potential_distribution_chart(df: pd.DataFrame) -> None:
         title_text="Distribuição de Potencial de Biogás"
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="potential_distribution_chart")
 
 
 def render_source_breakdown_chart(df: pd.DataFrame) -> None:

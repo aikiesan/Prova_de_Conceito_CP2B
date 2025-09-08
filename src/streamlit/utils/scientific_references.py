@@ -906,6 +906,38 @@ class ScientificReferencesManager:
                         for finding in ref.key_findings:
                             st.markdown(f"• {finding}")
     
+    def render_complete_bibliography(self) -> None:
+        """Render complete bibliography of all references"""
+        self.render_references_page()
+    
+    def render_references_by_category(self, category: str) -> None:
+        """Render references for a specific category"""
+        
+        # Get references for the category
+        grouped_refs = self._group_references_by_category()
+        
+        if category not in grouped_refs:
+            st.warning(f"No references found for category: {category}")
+            return
+        
+        refs = grouped_refs[category]
+        
+        st.markdown(f"### 📚 {category.title()} References ({len(refs)} studies)")
+        st.markdown("---")
+        
+        for ref in refs:
+            with st.expander(f"{ref.authors.split(',')[0]} et al. ({ref.year}) - {ref.title[:60]}..."):
+                self.render_reference_link(ref.id, inline=False)
+                
+                if ref.abstract:
+                    st.markdown("**Abstract:**")
+                    st.markdown(f"*{ref.abstract}*")
+                
+                if ref.key_findings:
+                    st.markdown("**Key Findings:**")
+                    for finding in ref.key_findings:
+                        st.markdown(f"• {finding}")
+    
     def _group_references_by_category(self) -> Dict[str, List[ScientificReference]]:
         """Group references by category"""
         
@@ -945,3 +977,38 @@ def show_reference_tooltip(ref_id: str, content: str):
 def show_conversion_factor_with_reference(factor_value: float, factor_name: str, ref_id: str, unit: str = "m³/ton"):
     """Show conversion factor with reference"""
     get_reference_manager().render_conversion_factor_with_reference(factor_value, factor_name, ref_id, unit)
+
+def show_complete_bibliography():
+    """Show complete bibliography of all references"""
+    manager = get_reference_manager()
+    manager.render_complete_bibliography()
+
+def show_biogas_references(source: str = "all"):
+    """Show biogas references for specific source or all sources"""
+    manager = get_reference_manager()
+    
+    if source == "all":
+        manager.render_complete_bibliography()
+    else:
+        # Extract the residue type from source names like 'biogas_cana_nm_ano'
+        if source.startswith('biogas_') and source.endswith('_nm_ano'):
+            residue_type = source.replace('biogas_', '').replace('_nm_ano', '')
+        else:
+            residue_type = source.lower()
+        
+        # Map residue types to actual categories used in the references
+        category_map = {
+            "cana": "cana",
+            "soja": "soja", 
+            "milho": "milho",
+            "cafe": "cafe",
+            "citros": "citros",
+            "bovinos": "livestock",
+            "suino": "suino",
+            "suinos": "suino",  # Handle plural form
+            "aves": "livestock",  # Poultry - use general livestock references
+            "piscicultura": "piscicultura"
+        }
+        
+        category = category_map.get(residue_type, residue_type)
+        manager.render_references_by_category(category)

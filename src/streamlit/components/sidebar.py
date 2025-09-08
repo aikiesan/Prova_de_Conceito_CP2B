@@ -9,7 +9,7 @@ try:
     from utils.database import query_df, MunicipalQueries
 except ImportError:
     # Fallback for Streamlit Cloud
-    from src.streamlit.utils.database import query_df, MunicipalQueries
+    from utils.database import query_df, MunicipalQueries
 import logging
 
 logger = logging.getLogger(__name__)

@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from typing import Dict, List, Optional, Any
 import logging
+from .scientific_refs_display import render_scientific_references_section
 from .comparative_charts import render_comparative_analysis_dashboard
 
 logger = logging.getLogger(__name__)
@@ -609,6 +610,8 @@ def render_residue_analysis_dashboard(df: pd.DataFrame) -> None:
     with tab5:
         render_comparative_analysis_dashboard(df)
     
+    # Scientific References Section
+    render_scientific_references_section()
     # Footer com informações técnicas
     st.markdown("---")
     with st.expander("🔧 Informações Técnicas"):
