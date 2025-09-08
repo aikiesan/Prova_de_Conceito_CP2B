@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(python -c \"from data_loader import load_mcda_geoparquet_by_radius, get_mcda_summary_stats_by_radius, MCDA_SCENARIOS; print(''Import successful'')\")",
+      "Bash(python:*)",
+      "Bash(streamlit run:*)",
+      "Bash(git commit:*)",
+      "Bash(git check-ignore:*)",
+      "Read(//c/Users/Lucas/Documents/CP2B/Dashboard_CP2B/projeto_cp2b/**)",
+      "Bash(git lfs:*)",
+      "Bash(git config:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

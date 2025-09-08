@@ -19,7 +19,8 @@
       "Bash(streamlit run:*)",
       "Bash(git add:*)",
       "Bash(git push:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
