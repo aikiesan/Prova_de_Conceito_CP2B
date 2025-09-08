@@ -840,13 +840,13 @@ def render_mcda_page(view: str):
             
         # Try to render simple report first (more reliable), then enhanced as fallback
         try:
-            from simple_report_component import render_simple_property_report
+            from components.mcda import render_simple_property_report
             render_simple_property_report(property_data, selected_radius)
-        except ImportError:
+        except (ImportError, AttributeError):
             try:
-                from enhanced_report_component import render_enhanced_property_report
+                from components.mcda import render_enhanced_property_report
                 render_enhanced_property_report(property_data, selected_radius)
-            except ImportError:
+            except (ImportError, AttributeError):
                 st.warning("⚠️ Relatórios aprimorados não disponíveis. Usando versão padrão.")
                 render_property_report_page(property_data)
 
