@@ -705,15 +705,48 @@ def render_mcda_page(view: str):
         
         with col3:
             if stats['status'] == 'success':
-                st.metric("Viáveis (>60)", f"{stats['viable_properties']:,}")
+                st.metric("Viáveis (Critério Técnico)", f"{stats['viable_properties']:,}")
             else:
-                st.metric("Viáveis (>60)", "0")
+                st.metric("Viáveis (Critério Técnico)", "0")
                 
         with col4:
             if stats['status'] == 'success' and stats['viable_properties'] > 0:
-                st.success(f"✅ Cenário {selected_radius}: {stats['viable_percentage']}% das propriedades são viáveis!")
+                threshold = stats['thresholds']['viable']
+                st.success(f"✅ {selected_radius}: {stats['viable_percentage']}% viáveis (Score >{threshold:.1f})")
             else:
                 st.info(f"ℹ️ Carregando dados do cenário {selected_radius}...")
+                
+        # Info box com critérios técnicos
+        if stats['status'] == 'success':
+            with st.expander("📋 Metodologia MCDA"):
+                st.markdown(f"""
+                **Cenário {selected_radius}** - {stats['thresholds']['justification']}
+                
+                **Componentes da Análise:**
+                - **Potencial de Biomassa (40%)**: Resíduos agrícolas, pecuários e urbanos
+                - **Infraestrutura (35%)**: Proximidade de rodovias, energia e gasodutos  
+                - **Restrições Ambientais (25%)**: Distância de áreas protegidas e urbanas
+                
+                Critérios definidos usando percentis estatísticos para realismo técnico-econômico.
+                """)
+                
+                # Mostrar comparação entre cenários
+                if st.button("🔄 Comparar com outros cenários"):
+                    comparison_data = []
+                    for comp_radius in ['10km', '30km', '50km']:
+                        comp_stats = get_mcda_summary_stats_by_radius(comp_radius)
+                        if comp_stats['status'] == 'success':
+                            comparison_data.append({
+                                'Cenário': comp_radius,
+                                'Viáveis': f"{comp_stats['viable_properties']:,} ({comp_stats['viable_percentage']:.1f}%)",
+                                'Muito Bom': f"{comp_stats['very_good_properties']:,} ({comp_stats['very_good_percentage']:.1f}%)",
+                                'Excelente': f"{comp_stats['excellent_properties']:,} ({comp_stats['excellent_percentage']:.1f}%)",
+                                'Threshold Viável': f">{comp_stats['thresholds']['viable']:.1f}"
+                            })
+                    
+                    if comparison_data:
+                        st.markdown("### 📊 Comparação de Cenários")
+                        st.dataframe(pd.DataFrame(comparison_data), use_container_width=True, hide_index=True)
         
         # Load data using the NEW function with radius selection
         with st.spinner(f"Carregando dados MCDA para raio {selected_radius}..."):
@@ -753,18 +786,19 @@ def render_mcda_page(view: str):
                 excellent_count = len(filtered_geodata[filtered_geodata['mcda_score'] > 80])
                 st.metric("Excelentes (>80)", f"{excellent_count:,}")
                 
-        # Comparative info box
+        # Removed redundant info boxes - information is already shown above
+                
+        # Alerta sobre critérios realistas
         if stats['status'] == 'success':
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.info(f"📈 **{selected_radius}**: {stats['viable_percentage']}% viáveis")
-            with col2:
-                if stats['excellent_percentage'] > 0:
-                    st.success(f"⭐ **Excelentes**: {stats['excellent_percentage']}%")
-                else:
-                    st.warning("⭐ **Excelentes**: 0%")
-            with col3:
-                st.metric("Score Máximo", f"{stats['max_score']:.1f}")
+            total_viable = stats['viable_properties']
+            if selected_radius == '50km':
+                if total_viable > 1000:
+                    st.warning(f"⚠️ **Atenção**: Mesmo com critérios rigorosos, {total_viable:,} propriedades aparecem como viáveis para {selected_radius}. Considere que logística >50km pode inviabilizar muitos projetos na prática.")
+            elif selected_radius == '30km':
+                if total_viable > 2000:
+                    st.info(f"ℹ️ **Cenário Intermediário**: {total_viable:,} propriedades viáveis para {selected_radius}. Balance entre potencial e custos logísticos.")
+            else:  # 10km
+                st.success(f"✅ **Cenário Otimizado**: {total_viable:,} propriedades viáveis para {selected_radius}. Logística eficiente e custos controlados.")
         
         # Create map using the VISIBLE and optimized function
         st.markdown("---")
@@ -779,51 +813,13 @@ def render_mcda_page(view: str):
             st.session_state.current_view = "report"
             st.rerun()
         
-        # Show top properties table
-        if not filtered_geodata.empty:
-            st.markdown("### 🏆 Top 10 Propriedades")
-            top_10 = filtered_geodata.nlargest(10, 'mcda_score') if 'mcda_score' in filtered_geodata.columns else filtered_geodata.head(10)
-            
-            # Prepare display columns
-            display_cols = ['cod_imovel', 'municipio']
-            if 'mcda_score' in top_10.columns:
-                display_cols.append('mcda_score')
-            if 'ranking' in top_10.columns:
-                display_cols.append('ranking')
-            if 'biomass_score' in top_10.columns:
-                display_cols.append('biomass_score')
-                
-            # Filter existing columns
-            available_cols = [col for col in display_cols if col in top_10.columns]
-            
-            if available_cols:
-                display_table = top_10[available_cols].copy()
-                
-                # Format columns for better display
-                if 'mcda_score' in display_table.columns:
-                    display_table['mcda_score'] = display_table['mcda_score'].round(1)
-                if 'biomass_score' in display_table.columns:
-                    display_table['biomass_score'] = display_table['biomass_score'].round(0)
-                    
-                st.dataframe(display_table, use_container_width=True, hide_index=True)
-                
-                # Add property selection buttons
-                st.markdown("#### 📊 Ver Relatório Detalhado")
-                selected_property = st.selectbox(
-                    "Selecione uma propriedade para análise detalhada:",
-                    options=top_10['cod_imovel'].tolist() if 'cod_imovel' in top_10.columns else [],
-                    format_func=lambda x: f"{x[:20]}... ({top_10[top_10['cod_imovel']==x]['municipio'].iloc[0] if 'municipio' in top_10.columns else 'N/A'})"
-                )
-                
-                if st.button("📋 Gerar Relatório MCDA", use_container_width=True):
-                    if selected_property:
-                        st.session_state.cp2b_selected_property = selected_property
-                        st.session_state.current_view = "report"
-                        st.rerun()
+        # Navigation instruction only - top 10 table removed
+        st.markdown("---")
         
     elif view == "report":
-        # === RENDER PROPERTY REPORT VIEW ===
+        # === RENDER ENHANCED PROPERTY REPORT VIEW ===
         selected_property_id = st.session_state.get('cp2b_selected_property')
+        selected_radius = st.session_state.get('cp2b_selected_radius', '30km')
         
         if not selected_property_id:
             st.error("❌ Nenhuma propriedade selecionada para relatório")
@@ -842,8 +838,17 @@ def render_mcda_page(view: str):
                 st.rerun()
             return
             
-        # Render full report
-        render_property_report_page(property_data)
+        # Try to render simple report first (more reliable), then enhanced as fallback
+        try:
+            from simple_report_component import render_simple_property_report
+            render_simple_property_report(property_data, selected_radius)
+        except ImportError:
+            try:
+                from enhanced_report_component import render_enhanced_property_report
+                render_enhanced_property_report(property_data, selected_radius)
+            except ImportError:
+                st.warning("⚠️ Relatórios aprimorados não disponíveis. Usando versão padrão.")
+                render_property_report_page(property_data)
 
 # --- 6. MAIN APPLICATION ---
 def main():

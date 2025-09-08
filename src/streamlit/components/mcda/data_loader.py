@@ -19,6 +19,9 @@ MCDA_SCENARIOS = {
     '50km': 'CP2B_MCDA_50km.geoparquet'
 }
 
+# Configuração do caminho dos dados
+CP2B_DATA_PATH = Path(__file__).parent.parent.parent  # Vai para o diretório streamlit
+
 
 @st.cache_data
 def load_mcda_geoparquet_by_radius(radius: str = '30km') -> gpd.GeoDataFrame:
@@ -55,11 +58,22 @@ def load_mcda_geoparquet_by_radius(radius: str = '30km') -> gpd.GeoDataFrame:
             logger.warning(f"⚠️ Arquivo {geoparquet_filename} está vazio")
             return load_cp2b_geoparquet_fallback()
             
-        # Verificar se as colunas necessárias existem
-        required_cols = ['cod_imovel', 'geometry', 'municipio']
+        # Verificar e ajustar colunas de município
+        if 'municipio' not in gdf.columns:
+            if 'municipio_x' in gdf.columns:
+                gdf['municipio'] = gdf['municipio_x']
+                logger.info(f"✅ Coluna 'municipio' criada a partir de 'municipio_x'")
+            elif 'municipio_y' in gdf.columns:
+                gdf['municipio'] = gdf['municipio_y']
+                logger.info(f"✅ Coluna 'municipio' criada a partir de 'municipio_y'")
+            else:
+                logger.warning(f"⚠️ Nenhuma coluna de município encontrada no arquivo {geoparquet_filename}")
+                
+        # Verificar se as colunas essenciais existem
+        required_cols = ['cod_imovel', 'geometry']
         missing_cols = [col for col in required_cols if col not in gdf.columns]
         if missing_cols:
-            logger.warning(f"⚠️ Colunas faltando no arquivo {geoparquet_filename}: {missing_cols}")
+            logger.warning(f"⚠️ Colunas essenciais faltando no arquivo {geoparquet_filename}: {missing_cols}")
             
         logger.info(f"✅ GeoParquet MCDA {radius} carregado: {len(gdf)} propriedades")
         logger.info(f"📊 Colunas disponíveis: {list(gdf.columns)}")
@@ -205,13 +219,13 @@ def get_property_details(cod_imovel: str) -> Optional[Dict[str, Any]]:
 
 def get_mcda_summary_stats_by_radius(radius: str = '30km') -> Dict[str, Any]:
     """
-    Retorna estatísticas resumo dos dados MCDA por raio
+    Retorna estatísticas resumo dos dados MCDA por raio com critérios técnico-econômicos realistas
     
     Args:
         radius: Raio de análise ('10km', '30km', ou '50km')
     
     Returns:
-        Dict com estatísticas do cenário MCDA específico
+        Dict com estatísticas do cenário MCDA específico baseado em critérios realistas
     """
     try:
         gdf = load_mcda_geoparquet_by_radius(radius)
@@ -225,22 +239,62 @@ def get_mcda_summary_stats_by_radius(radius: str = '30km') -> Dict[str, Any]:
                 'max_score': 0,
                 'viable_properties': 0,
                 'excellent_properties': 0,
+                'very_good_properties': 0,
                 'status': 'error'
             }
+        
+        # CRITÉRIOS TÉCNICO-ECONÔMICOS REALISTAS baseados em análise estatística
+        # e literatura científica sobre plantas de biogás
+        REALISTIC_THRESHOLDS = {
+            '10km': {
+                'excellent': 61.3,  # P95 - Top 5% apenas
+                'very_good': 57.1,  # P90 - Top 10%
+                'viable': 50.9,     # P75 - Top 25%
+                'justification': 'Raio ótimo - logística eficiente, menor custo transporte'
+            },
+            '30km': {
+                'excellent': 65.5,  # P95 - Critério mais rigoroso para raio médio
+                'very_good': 62.9,  # P90
+                'viable': 58.6,     # P75 - Mais exigente que 10km
+                'justification': 'Raio médio - balance entre potencial e logística'
+            },
+            '50km': {
+                'excellent': 75.8,  # P95 - Muito rigoroso para raio alto
+                'very_good': 72.8,  # P90
+                'viable': 69.5,     # P75 - Altamente seletivo
+                'justification': 'Raio alto - apenas locais excepcionais justificam logística'
+            }
+        }
+        
+        # Usar thresholds realistas baseados na análise
+        thresholds = REALISTIC_THRESHOLDS.get(radius, REALISTIC_THRESHOLDS['30km'])
         
         # Calcular scores se existirem
         avg_score = 0
         max_score = 0
         min_score = 0
         viable_count = 0
+        very_good_count = 0
         excellent_count = 0
         
         if 'mcda_score' in gdf.columns:
-            avg_score = gdf['mcda_score'].mean()
-            max_score = gdf['mcda_score'].max()
-            min_score = gdf['mcda_score'].min()
-            viable_count = len(gdf[gdf['mcda_score'] > 60])
-            excellent_count = len(gdf[gdf['mcda_score'] > 80])
+            scores = gdf['mcda_score']
+            avg_score = scores.mean()
+            max_score = scores.max()
+            min_score = scores.min()
+            
+            # Aplicar critérios técnico-econômicos REALISTAS
+            excellent_count = len(gdf[scores > thresholds['excellent']])
+            very_good_count = len(gdf[scores > thresholds['very_good']]) 
+            viable_count = len(gdf[scores > thresholds['viable']])
+        
+        # Critério adicional: Potencial mínimo de biogás para viabilidade técnica
+        biogas_col = f'total_biogas_nm3_year_{radius}'
+        biogas_viable_count = 0
+        if biogas_col in gdf.columns:
+            # Critério técnico: Planta mínima de 250kW = 219,000 Nm3/ano
+            min_viable_biogas = 219000
+            biogas_viable_count = len(gdf[gdf[biogas_col] > min_viable_biogas])
         
         stats = {
             'radius': radius,
@@ -249,15 +303,26 @@ def get_mcda_summary_stats_by_radius(radius: str = '30km') -> Dict[str, Any]:
             'avg_score': round(avg_score, 1),
             'max_score': round(max_score, 1),
             'min_score': round(min_score, 1),
-            'viable_properties': viable_count,
+            
+            # Classificação técnico-econômica REALISTA
             'excellent_properties': excellent_count,
-            'viable_percentage': round((viable_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            'very_good_properties': very_good_count,
+            'viable_properties': viable_count,
+            'biogas_viable_properties': biogas_viable_count,
+            
+            # Percentuais realistas
             'excellent_percentage': round((excellent_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            'very_good_percentage': round((very_good_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            'viable_percentage': round((viable_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            'biogas_viable_percentage': round((biogas_viable_count / len(gdf)) * 100, 1) if len(gdf) > 0 else 0,
+            
+            # Thresholds utilizados
+            'thresholds': thresholds,
             'top_municipalities': gdf['municipio'].value_counts().head(5).to_dict() if 'municipio' in gdf.columns else {},
             'status': 'success'
         }
         
-        logger.info(f"✅ Estatísticas MCDA {radius}: {stats['total_properties']} propriedades, {stats['viable_properties']} viáveis")
+        logger.info(f"✅ Estatísticas MCDA {radius} (CRITÉRIOS REALISTAS): {stats['total_properties']} propriedades, {stats['viable_properties']} viáveis ({stats['viable_percentage']}%)")
         return stats
         
     except Exception as e:

@@ -34,6 +34,23 @@ from .report_component import (
     render_property_report_page
 )
 
+# Simple report component (reliable and fast)
+try:
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    from simple_report_component import render_simple_property_report
+    SIMPLE_REPORT_AVAILABLE = True
+except ImportError:
+    SIMPLE_REPORT_AVAILABLE = False
+
+# Enhanced report component with detailed analysis (backup)
+try:
+    from enhanced_report_component import render_enhanced_property_report
+    ENHANCED_REPORT_AVAILABLE = True
+except ImportError:
+    ENHANCED_REPORT_AVAILABLE = False
+
 __all__ = [
     'load_cp2b_complete_database',
     'load_cp2b_spatial_data',
@@ -54,3 +71,9 @@ __all__ = [
     'detect_clicked_property_optimized',
     'render_property_report_page'
 ]
+
+# Add reports if available
+if SIMPLE_REPORT_AVAILABLE:
+    __all__.append('render_simple_property_report')
+if ENHANCED_REPORT_AVAILABLE:
+    __all__.append('render_enhanced_property_report')
