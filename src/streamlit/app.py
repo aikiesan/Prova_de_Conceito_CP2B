@@ -828,8 +828,9 @@ def render_mcda_page(view: str):
                 st.rerun()
             return
             
-        # Get property details
-        property_data = get_property_details(selected_property_id)
+        # Get property details using the current selected radius
+        selected_radius = st.session_state.get('cp2b_selected_radius', '30km')
+        property_data = get_property_details(selected_property_id, selected_radius)
         
         if not property_data:
             st.error(f"❌ Propriedade {selected_property_id} não encontrada")

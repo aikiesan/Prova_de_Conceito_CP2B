@@ -20,7 +20,7 @@ MCDA_SCENARIOS = {
 }
 
 # Configuração do caminho dos dados
-CP2B_DATA_PATH = Path(__file__).parent.parent.parent  # Vai para o diretório streamlit
+CP2B_DATA_PATH = Path(__file__).parent.parent  # Vai para o diretório streamlit (onde estão os arquivos)
 
 
 @st.cache_data
@@ -41,12 +41,25 @@ def load_mcda_geoparquet_by_radius(radius: str = '30km') -> gpd.GeoDataFrame:
             
         geoparquet_filename = MCDA_SCENARIOS[radius]
         
-        # Tenta encontrar o arquivo no diretório atual
-        current_path = Path.cwd()
-        geoparquet_path = current_path / geoparquet_filename
+        # Tenta encontrar o arquivo em múltiplos locais possíveis
+        search_paths = [
+            Path(__file__).parent.parent / geoparquet_filename,  # streamlit directory (correct path)
+            Path.cwd() / "src" / "streamlit" / geoparquet_filename,  # From project root
+            Path.cwd() / geoparquet_filename,  # Current working directory
+            CP2B_DATA_PATH / geoparquet_filename,  # Data path fallback
+        ]
         
-        if not geoparquet_path.exists():
-            logger.warning(f"⚠️ Arquivo {geoparquet_filename} não encontrado em {current_path}")
+        geoparquet_path = None
+        for path in search_paths:
+            if path.exists():
+                geoparquet_path = path
+                logger.info(f"✅ Arquivo MCDA encontrado em: {path}")
+                break
+        
+        if geoparquet_path is None:
+            logger.warning(f"⚠️ Arquivo {geoparquet_filename} não encontrado em nenhum dos caminhos:")
+            for path in search_paths:
+                logger.warning(f"   - {path}")
             logger.info("🔄 Tentando carregar dados antigos como fallback...")
             return load_cp2b_geoparquet_fallback()
         
@@ -132,15 +145,37 @@ def load_cp2b_complete_database() -> pd.DataFrame:
     try:
         logger.info("Carregando banco de dados CP2B completo...")
         
-        # Carrega arquivo principal consolidado
-        df = pd.read_csv(f"{CP2B_DATA_PATH}/CP2B_Complete_Database.csv")
+        # Try to load from available parquet files first (more efficient and smaller)
+        parquet_files = [
+            "CP2B_Biomass_Potential_CORRECTED.parquet",
+            "CP2B_Biomass_Potential_Analysis.parquet"
+        ]
         
-        logger.info(f"✅ CP2B: {len(df)} propriedades carregadas com sucesso")
-        return df
+        for parquet_file in parquet_files:
+            parquet_path = CP2B_DATA_PATH / parquet_file
+            if parquet_path.exists():
+                logger.info(f"Loading complete database from {parquet_file}")
+                df = pd.read_parquet(parquet_path)
+                logger.info(f"✅ CP2B: {len(df)} propriedades carregadas com sucesso (parquet)")
+                return df
         
-    except FileNotFoundError:
-        logger.error("❌ Arquivo CP2B_Complete_Database.csv não encontrado")
+        # Fallback to CSV files
+        csv_files = [
+            "CP2B_Complete_Database.csv",
+            "CP2B_Resultados_Finais.csv"
+        ]
+        
+        for csv_file in csv_files:
+            csv_path = CP2B_DATA_PATH / csv_file
+            if csv_path.exists():
+                logger.info(f"Loading complete database from {csv_file} (fallback)")
+                df = pd.read_csv(csv_path)
+                logger.info(f"✅ CP2B: {len(df)} propriedades carregadas com sucesso (csv)")
+                return df
+        
+        logger.error("❌ Nenhum arquivo de dados CP2B encontrado")
         return pd.DataFrame()
+        
     except Exception as e:
         logger.error(f"❌ Erro ao carregar dados CP2B: {str(e)}")
         return pd.DataFrame()
@@ -156,9 +191,8 @@ def load_cp2b_spatial_data() -> pd.DataFrame:
     try:
         logger.info("Carregando dados espaciais CP2B...")
         
-        # Para MVP, vamos carregar dados básicos de localização
-        # Futuramente podemos otimizar com geometrias simplificadas
-        df = pd.read_csv(f"{CP2B_DATA_PATH}/CP2B_Complete_Database.csv")
+        # Use the complete database function which has graceful fallback
+        df = load_cp2b_complete_database()
         
         # Selecionar apenas colunas essenciais para performance
         spatial_cols = [
@@ -177,17 +211,74 @@ def load_cp2b_spatial_data() -> pd.DataFrame:
         logger.error(f"❌ Erro ao carregar dados espaciais CP2B: {str(e)}")
         return pd.DataFrame()
 
-def get_property_details(cod_imovel: str) -> Optional[Dict[str, Any]]:
+def get_property_details(cod_imovel: str, radius: str = '30km') -> Optional[Dict[str, Any]]:
     """
-    Busca detalhes completos de uma propriedade usando um caminho absoluto e inquebrável.
+    Busca detalhes completos de uma propriedade usando dados disponíveis com fallback gracioso.
     """
     try:
-        # --- THIS IS THE UNBREAKABLE PATH LOGIC ---
+        # --- LOAD FROM MCDA GEOPARQUET FILES (CONTAINS SCORES) ---
         current_file_path = Path(__file__)
-        streamlit_root = current_file_path.parent.parent.parent
-        csv_path = streamlit_root / "CP2B_Resultados_Finais.csv"
-
-        df = pd.read_csv(csv_path, low_memory=False)
+        streamlit_root = current_file_path.parent.parent.parent  # Go up from components/mcda/ to streamlit/
+        
+        logger.info(f"🔍 Looking for property {cod_imovel} with radius {radius}")
+        logger.info(f"📁 Streamlit root path: {streamlit_root}")
+        
+        # First try to load from the specific radius MCDA file
+        primary_mcda_file = f"CP2B_MCDA_{radius}.geoparquet"
+        fallback_mcda_files = [
+            "CP2B_MCDA_30km.geoparquet",  # Default fallback
+            "CP2B_MCDA_10km.geoparquet",
+            "CP2B_MCDA_50km.geoparquet"
+        ]
+        
+        # Remove the primary file from fallbacks to avoid duplicates
+        mcda_files = [primary_mcda_file] + [f for f in fallback_mcda_files if f != primary_mcda_file]
+        
+        df = None
+        for mcda_file in mcda_files:
+            mcda_path = streamlit_root / mcda_file
+            logger.info(f"🔍 Checking path: {mcda_path}")
+            if mcda_path.exists():
+                logger.info(f"✅ Loading property details from {mcda_file}")
+                gdf = gpd.read_parquet(mcda_path)
+                # Convert to regular DataFrame for consistency, keeping all columns except geometry
+                df = pd.DataFrame(gdf.drop(columns=['geometry']) if 'geometry' in gdf.columns else gdf)
+                
+                # Fix municipio column - MCDA files have municipio_x and municipio_y
+                if 'municipio' not in df.columns:
+                    if 'municipio_x' in df.columns:
+                        df['municipio'] = df['municipio_x']
+                        logger.info("✅ Using municipio_x as municipio column")
+                    elif 'municipio_y' in df.columns:
+                        df['municipio'] = df['municipio_y']
+                        logger.info("✅ Using municipio_y as municipio column")
+                        
+                break
+        
+        # Fallback to parquet files if MCDA files not available
+        if df is None:
+            parquet_files = [
+                "CP2B_Biomass_Potential_CORRECTED.parquet",
+                "CP2B_Biomass_Potential_Analysis.parquet"
+            ]
+            
+            for parquet_file in parquet_files:
+                parquet_path = streamlit_root / parquet_file
+                if parquet_path.exists():
+                    logger.info(f"Loading property details from {parquet_file} (fallback - no MCDA scores)")
+                    df = pd.read_parquet(parquet_path)
+                    break
+        
+        # Final fallback to CSV
+        if df is None:
+            csv_path = streamlit_root / "CP2B_Resultados_Finais.csv"
+            if csv_path.exists():
+                logger.info("Loading property details from CSV (final fallback)")
+                df = pd.read_csv(csv_path, low_memory=False)
+            else:
+                logger.warning(f"❌ No data files found for property details in {streamlit_root}")
+                logger.warning(f"📁 Tried MCDA files: {mcda_files}")
+                return None
         
         if df.empty:
             return None
@@ -195,10 +286,19 @@ def get_property_details(cod_imovel: str) -> Optional[Dict[str, Any]]:
         search_code = str(cod_imovel).strip()
         df['cod_imovel'] = df['cod_imovel'].astype(str).str.strip()
         
+        # Debug logging
+        logger.info(f"🔍 Searching for property: {search_code}")
+        logger.info(f"📊 Total properties in dataset: {len(df)}")
+        
         property_data = df[df['cod_imovel'] == search_code]
         
         if property_data.empty:
-            logger.warning(f"Propriedade {search_code} não encontrada em {csv_path}.")
+            logger.warning(f"❌ Propriedade {search_code} não encontrada.")
+            logger.info(f"📝 Sample cod_imovel values: {df['cod_imovel'].head(5).tolist()}")
+            # Check for similar codes
+            similar = df[df['cod_imovel'].str.contains(search_code[:15], na=False, regex=False)]['cod_imovel'].head(3).tolist()
+            if similar:
+                logger.info(f"🔍 Similar codes found: {similar}")
             return None
             
         property_dict = property_data.iloc[0].to_dict()
